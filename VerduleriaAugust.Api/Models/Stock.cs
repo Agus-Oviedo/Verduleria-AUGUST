@@ -1,4 +1,6 @@
-﻿namespace VerduleriaAugust.Api.Models;
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace VerduleriaAugust.Api.Models;
 
 public class Stock
 {
@@ -8,11 +10,14 @@ public class Stock
 
     public decimal StockActual { get; set; }
 
-    public string UnidadMedida { get; set; } = string.Empty; // Kg, Unidad
+    public string UnidadMedida { get; set; } = string.Empty;
 
     public decimal? StockMinimo { get; set; }
 
     public DateTime FechaActualizacion { get; set; }
+
+    [Timestamp]
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
     public Producto? Producto { get; set; }
 }

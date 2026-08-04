@@ -4,7 +4,8 @@ namespace VerduleriaAugust.Api.Models;
 
 public class AugustDbContext : DbContext
 {
-    public AugustDbContext(DbContextOptions<AugustDbContext> options) : base(options)
+    public AugustDbContext(DbContextOptions<AugustDbContext> options)
+        : base(options)
     {
     }
 
@@ -30,6 +31,19 @@ public class AugustDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
+        ConfigurarCategoria(modelBuilder);
+        ConfigurarProducto(modelBuilder);
+        ConfigurarStock(modelBuilder);
+        ConfigurarMovimientoStock(modelBuilder);
+        ConfigurarCaja(modelBuilder);
+        ConfigurarVenta(modelBuilder);
+        ConfigurarVentaDetalle(modelBuilder);
+        ConfigurarFormaPago(modelBuilder);
+        ConfigurarPagoVenta(modelBuilder);
+    }
+
+    private static void ConfigurarCategoria(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<Categoria>(entity =>
         {
             entity.ToTable("Categorias");
@@ -46,7 +60,10 @@ public class AugustDbContext : DbContext
             entity.Property(e => e.FechaCreacion)
                 .HasDefaultValueSql("SYSDATETIME()");
         });
+    }
 
+    private static void ConfigurarProducto(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<Producto>(entity =>
         {
             entity.ToTable("Productos");
@@ -82,9 +99,13 @@ public class AugustDbContext : DbContext
 
             entity.HasOne(e => e.Categoria)
                 .WithMany(e => e.Productos)
-                .HasForeignKey(e => e.CategoriaId);
+                .HasForeignKey(e => e.CategoriaId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
+    }
 
+    private static void ConfigurarStock(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<Stock>(entity =>
         {
             entity.ToTable("Stock");
@@ -105,14 +126,22 @@ public class AugustDbContext : DbContext
             entity.Property(e => e.FechaActualizacion)
                 .HasDefaultValueSql("SYSDATETIME()");
 
+            entity.Property(e => e.RowVersion)
+                .IsRowVersion()
+                .IsConcurrencyToken();
+
             entity.HasIndex(e => e.ProductoId)
                 .IsUnique();
 
             entity.HasOne(e => e.Producto)
                 .WithOne(e => e.Stock)
-                .HasForeignKey<Stock>(e => e.ProductoId);
+                .HasForeignKey<Stock>(e => e.ProductoId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
+    }
 
+    private static void ConfigurarMovimientoStock(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<MovimientoStock>(entity =>
         {
             entity.ToTable("MovimientosStock");
@@ -143,9 +172,13 @@ public class AugustDbContext : DbContext
 
             entity.HasOne(e => e.Producto)
                 .WithMany()
-                .HasForeignKey(e => e.ProductoId);
+                .HasForeignKey(e => e.ProductoId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
+    }
 
+    private static void ConfigurarCaja(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<Caja>(entity =>
         {
             entity.ToTable("Cajas");
@@ -172,7 +205,10 @@ public class AugustDbContext : DbContext
             entity.Property(e => e.FechaCreacion)
                 .HasDefaultValueSql("SYSDATETIME()");
         });
+    }
 
+    private static void ConfigurarVenta(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<Venta>(entity =>
         {
             entity.ToTable("Ventas");
@@ -205,9 +241,13 @@ public class AugustDbContext : DbContext
 
             entity.HasOne(e => e.Caja)
                 .WithMany(e => e.Ventas)
-                .HasForeignKey(e => e.CajaId);
+                .HasForeignKey(e => e.CajaId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
+    }
 
+    private static void ConfigurarVentaDetalle(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<VentaDetalle>(entity =>
         {
             entity.ToTable("VentaDetalles");
@@ -232,13 +272,18 @@ public class AugustDbContext : DbContext
 
             entity.HasOne(e => e.Venta)
                 .WithMany(e => e.Detalles)
-                .HasForeignKey(e => e.VentaId);
+                .HasForeignKey(e => e.VentaId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasOne(e => e.Producto)
                 .WithMany()
-                .HasForeignKey(e => e.ProductoId);
+                .HasForeignKey(e => e.ProductoId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
+    }
 
+    private static void ConfigurarFormaPago(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<FormaPago>(entity =>
         {
             entity.ToTable("FormasPago");
@@ -252,7 +297,10 @@ public class AugustDbContext : DbContext
             entity.Property(e => e.Activa)
                 .HasDefaultValue(true);
         });
+    }
 
+    private static void ConfigurarPagoVenta(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<PagoVenta>(entity =>
         {
             entity.ToTable("PagosVenta");
@@ -265,11 +313,13 @@ public class AugustDbContext : DbContext
 
             entity.HasOne(e => e.Venta)
                 .WithMany(e => e.Pagos)
-                .HasForeignKey(e => e.VentaId);
+                .HasForeignKey(e => e.VentaId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasOne(e => e.FormaPago)
                 .WithMany(e => e.PagosVenta)
-                .HasForeignKey(e => e.FormaPagoId);
+                .HasForeignKey(e => e.FormaPagoId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
