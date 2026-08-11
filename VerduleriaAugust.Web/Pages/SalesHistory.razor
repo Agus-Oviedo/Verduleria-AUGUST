@@ -1,0 +1,88 @@
+@page "/ventas"
+@attribute [Authorize]
+@inject SalesService SalesService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Ventas · Augustu</PageTitle>
+
+<div class="history-page">
+    <header><button class="back-button" type="button" @onclick="GoToDashboard">← Panel principal</button><div><strong>Augustu</strong><span>Historial de ventas</span></div><button class="new-sale" type="button" @onclick="GoToNewSale">+ Nueva venta</button></header>
+    <main>
+        <div class="heading"><div><p>VENTAS</p><h1>Historial de ventas</h1><span>Consultá las operaciones registradas en todas las cajas.</span></div><strong>@Total venta(s)</strong></div>
+        <section class="filters">
+            <input @bind="Search" @bind:event="oninput" placeholder="Buscar número de venta…" @onkeydown="SearchKeyDown" />
+            <select @bind="Status"><option value="">Todos los estados</option><option value="Finalizada">Finalizadas</option><option value="Anulada">Anuladas</option></select>
+            <button @onclick="ApplyFilters">Buscar</button>
+        </section>
+        <section class="table-card">
+            @if (IsLoading) { <div class="message">Cargando ventas…</div> }
+            else if (!string.IsNullOrWhiteSpace(Error)) { <div class="message error">@Error <button @onclick="LoadAsync">Reintentar</button></div> }
+            else if (Sales.Count == 0) { <div class="message">No hay ventas que coincidan con la búsqueda.</div> }
+            else
+            {
+                <div class="table-wrap"><table><thead><tr><th>Venta</th><th>Fecha</th><th>Caja</th><th>Pago</th><th>Estado</th><th>Total</th><th></th></tr></thead><tbody>
+                @foreach (var sale in Sales)
+                {
+                    <tr><td><strong>@sale.NumeroVenta</strong><small>#@sale.Id</small></td><td>@sale.FechaVenta.ToString("dd/MM/yyyy HH:mm")</td><td>@(sale.Caja ?? $"Caja {sale.CajaId}")</td><td>@(sale.FormasPago ?? "—")</td><td><span class="status @sale.Estado.ToLowerInvariant()">@sale.Estado</span></td><td class="total">$ @sale.Total.ToString("N2")</td><td><button class="details-button" @onclick="() => OpenDetailAsync(sale.Id)">Ver detalle</button></td></tr>
+                }
+                </tbody></table></div>
+            }
+        </section>
+        @if (TotalPages > 1) { <nav class="pager"><button disabled="@(Page == 1)" @onclick="PreviousPage">← Anterior</button><span>Página @Page de @TotalPages</span><button disabled="@(Page >= TotalPages)" @onclick="NextPage">Siguiente →</button></nav> }
+    </main>
+    @if (ShowDetail)
+    {
+        <div class="sale-backdrop" @onclick="CloseDetail"><section class="sale-dialog" @onclick:stopPropagation><button class="dialog-x" @onclick="CloseDetail">×</button>
+            @if (IsLoadingDetail) { <div class="detail-message">Cargando venta…</div> }
+            else if (DetailError is not null) { <div class="detail-message error">@DetailError</div> }
+            else if (Detail is not null) { <p class="dialog-label">DETALLE DE VENTA</p><h2>@Detail.NumeroVenta</h2><div class="detail-meta"><span>@Detail.FechaVenta.ToString("dd/MM/yyyy HH:mm")</span><span>@(Detail.Caja ?? $"Caja {Detail.CajaId}")</span><span class="status @Detail.Estado.ToLowerInvariant()">@Detail.Estado</span></div><div class="lines">@foreach(var line in Detail.Detalles){<article><div><strong>@(line.Producto??$"Producto {line.ProductoId}")</strong><span>@line.Cantidad.ToString("N3") · @line.TipoVenta × $ @line.PrecioUnitario.ToString("N2")</span></div><b>$ @line.TotalLinea.ToString("N2")</b></article>}</div><div class="detail-totals"><div><span>Subtotal</span><strong>$ @Detail.Subtotal.ToString("N2")</strong></div><div><span>Descuento</span><strong>$ @Detail.Descuento.ToString("N2")</strong></div><div class="grand"><span>Total</span><strong>$ @Detail.Total.ToString("N2")</strong></div></div><div class="payments">@foreach(var payment in Detail.Pagos){<span>@(payment.FormaPago??"Pago")</span><strong>$ @payment.Importe.ToString("N2")</strong>}</div>@if(Detail.AuditoriaDescuento is not null){<div class="discount-audit"><strong>Descuento autorizado por @(Detail.AuditoriaDescuento.Usuario??"Sistema")</strong><span>@Detail.AuditoriaDescuento.Motivo</span></div>}<button class="print-sale" @onclick="OpenReceipt">Imprimir comprobante</button>@if(Detail.Anulacion is not null){<div class="cancel-info"><strong>Anulada por @(Detail.Anulacion.Usuario??"Sistema")</strong><span>@Detail.Anulacion.Motivo</span></div>}else{<AuthorizeView Roles="Administrador,Encargado"><Authorized><button class="cancel-sale" @onclick="BeginCancellation">Anular venta y reponer stock</button></Authorized></AuthorizeView>}
+            }
+        </section></div>
+    }
+    @if (ShowCancellation)
+    {
+        <div class="sale-backdrop"><section class="cancel-dialog"><h2>Confirmar anulación</h2><p>Esta operación repondrá automáticamente el stock de todos los productos.</p><label>Motivo<textarea @bind="CancellationReason" maxlength="300"></textarea></label>@if(CancellationError is not null){<div class="cancel-error">@CancellationError</div>}<div><button @onclick="CancelCancellation">Volver</button><button class="danger" disabled="@IsCancelling" @onclick="ConfirmCancellationAsync">@(IsCancelling?"Anulando…":"Confirmar anulación")</button></div></section></div>
+    }
+    @if (ShowReceipt && Detail is not null)
+    {
+        <div class="history-receipt-backdrop" @onclick="CloseReceipt">
+            <section class="history-receipt" @onclick:stopPropagation>
+                <header><img src="augustu-logo.jpeg" alt="Augustu" /><div><h2>AUGUSTU</h2><span>FRUTAS Y VERDURAS</span></div></header>
+                <div class="receipt-meta"><strong>@Detail.NumeroVenta</strong><span>@Detail.FechaVenta.ToString("dd/MM/yyyy HH:mm") · @(Detail.Caja ?? $"Caja {Detail.CajaId}")</span></div>
+                @if (Detail.Estado.Equals("Anulada", StringComparison.OrdinalIgnoreCase)) { <div class="receipt-cancelled">VENTA ANULADA</div> }
+                <div class="receipt-lines">@foreach(var line in Detail.Detalles){<article><div><strong>@(line.Producto??$"Producto {line.ProductoId}")</strong><span>@line.Cantidad.ToString("N3") @line.TipoVenta.ToLowerInvariant() × $ @line.PrecioUnitario.ToString("N2")</span></div><b>$ @line.TotalLinea.ToString("N2")</b></article>}</div>
+                <div class="receipt-totals"><span>Subtotal <b>$ @Detail.Subtotal.ToString("N2")</b></span><span>Descuento <b>$ @Detail.Descuento.ToString("N2")</b></span><strong>Total <b>$ @Detail.Total.ToString("N2")</b></strong></div>
+                <div class="receipt-payments">@foreach(var payment in Detail.Pagos){<span>@(payment.FormaPago??"Pago") <b>$ @payment.Importe.ToString("N2")</b></span>}</div>
+                <footer><strong>Gracias por su compra</strong><small>Comprobante interno no fiscal</small></footer>
+                <div class="receipt-actions"><button class="secondary" @onclick="CloseReceipt">Cerrar</button><button @onclick="PrintReceiptAsync">Imprimir</button></div>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private List<SaleSummary> Sales { get; } = [];
+    private string Search { get; set; } = "";
+    private string Status { get; set; } = "";
+    private int Page { get; set; } = 1;
+    private int Total { get; set; }
+    private int TotalPages { get; set; }
+    private bool IsLoading { get; set; }
+    private string? Error { get; set; }
+    private SaleDetail? Detail { get; set; } private bool ShowDetail { get; set; } private bool IsLoadingDetail { get; set; } private string? DetailError { get; set; } private bool ShowCancellation { get; set; } private bool ShowReceipt { get; set; } private string CancellationReason { get; set; } = ""; private string? CancellationError { get; set; } private bool IsCancelling { get; set; }
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync() { IsLoading=true; Error=null; try { var result=await SalesService.GetSalesAsync(Page,Search,Status); Sales.Clear(); Sales.AddRange(result.Items); Total=result.Total; TotalPages=result.TotalPaginas; } catch(Exception ex) when(ex is HttpRequestException or UnauthorizedAccessException) { Error=ex.Message; } finally { IsLoading=false; } }
+    private async Task ApplyFilters() { Page=1; await LoadAsync(); }
+    private async Task SearchKeyDown(KeyboardEventArgs e) { if(e.Key=="Enter") await ApplyFilters(); }
+    private async Task PreviousPage() { if(Page>1){Page--;await LoadAsync();} }
+    private async Task NextPage() { if(Page<TotalPages){Page++;await LoadAsync();} }
+    private void GoToDashboard() => Navigation.NavigateTo("/");
+    private void GoToNewSale() => Navigation.NavigateTo("/ventas/nueva");
+    private async Task OpenDetailAsync(int id) { ShowDetail=true;IsLoadingDetail=true;DetailError=null;try{Detail=await SalesService.GetSaleAsync(id);}catch(Exception ex)when(ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException){DetailError=ex.Message;}finally{IsLoadingDetail=false;} }
+    private void CloseDetail(){if(!IsCancelling)ShowDetail=false;} private void BeginCancellation(){CancellationReason="";CancellationError=null;ShowCancellation=true;} private void CancelCancellation(){if(!IsCancelling)ShowCancellation=false;}
+    private void OpenReceipt() => ShowReceipt = true;
+    private void CloseReceipt() => ShowReceipt = false;
+    private Task PrintReceiptAsync() => JS.InvokeVoidAsync("window.print").AsTask();
+    private async Task ConfirmCancellationAsync(){if(Detail is null)return;if(CancellationReason.Trim().Length<5){CancellationError="El motivo debe tener al menos 5 caracteres.";return;}IsCancelling=true;CancellationError=null;try{await SalesService.CancelSaleAsync(Detail.Id,CancellationReason);ShowCancellation=false;Detail=await SalesService.GetSaleAsync(Detail.Id);await LoadAsync();}catch(Exception ex)when(ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException){CancellationError=ex.Message;}finally{IsCancelling=false;}}
+}

@@ -22,6 +22,125 @@ namespace VerduleriaAugust.Api.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.AuditoriaUsuario", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Accion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Detalle")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("Fecha")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSDATETIME()");
+
+                    b.Property<int?>("UsuarioActorId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UsuarioObjetivoId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UsuarioActorId");
+
+                    b.HasIndex("UsuarioObjetivoId", "Fecha");
+
+                    b.ToTable("AuditoriasUsuario", (string)null);
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.Balanza", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Activa")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("ApiKeyHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("BaudRate")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CajaId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DataBits")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSDATETIME()");
+
+                    b.Property<string>("Marca")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Modelo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("NumeroSerie")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Paridad")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("PuertoCom")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("StopBits")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("UltimaConexion")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApiKeyHash")
+                        .IsUnique()
+                        .HasFilter("[ApiKeyHash] IS NOT NULL");
+
+                    b.HasIndex("CajaId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_Balanzas_Caja")
+                        .HasFilter("[Activa] = 1");
+
+                    b.HasIndex("NumeroSerie")
+                        .IsUnique()
+                        .HasFilter("[NumeroSerie] IS NOT NULL");
+
+                    b.ToTable("Balanzas", (string)null);
+                });
+
             modelBuilder.Entity("VerduleriaAugust.Api.Models.Caja", b =>
                 {
                     b.Property<int>("Id")
@@ -103,14 +222,128 @@ namespace VerduleriaAugust.Api.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(true);
 
+                    b.Property<bool>("EsEfectivo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("Nombre")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<int>("Orden")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.HasKey("Id");
 
+                    b.HasIndex("Nombre")
+                        .IsUnique();
+
                     b.ToTable("FormasPago", (string)null);
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.HistorialPrecio", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("FechaCambio")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSDATETIME()");
+
+                    b.Property<string>("Motivo")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<decimal?>("PrecioPorKiloAnterior")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("PrecioPorKiloNuevo")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("PrecioPorUnidadAnterior")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("PrecioPorUnidadNuevo")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("ProductoId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("ProductoId", "FechaCambio");
+
+                    b.ToTable("HistorialPrecios", (string)null);
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.MovimientoCaja", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Anulado")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("Fecha")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSDATETIME()");
+
+                    b.Property<DateTime?>("FechaAnulacion")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("Importe")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Motivo")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("MotivoAnulacion")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int>("SesionCajaId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<int?>("UsuarioAnulacionId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UsuarioAnulacionId");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("SesionCajaId", "Fecha");
+
+                    b.ToTable("MovimientosCaja", (string)null);
                 });
 
             modelBuilder.Entity("VerduleriaAugust.Api.Models.MovimientoStock", b =>
@@ -147,9 +380,14 @@ namespace VerduleriaAugust.Api.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<int?>("UsuarioId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ProductoId");
+
+                    b.HasIndex("UsuarioId");
 
                     b.ToTable("MovimientosStock", (string)null);
                 });
@@ -232,6 +470,284 @@ namespace VerduleriaAugust.Api.Migrations
                     b.ToTable("Productos", (string)null);
                 });
 
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.Proveedor", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Contacto")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Cuit")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Nombre");
+
+                    b.ToTable("Proveedores", (string)null);
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.RecepcionMercaderia", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Comprobante")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("FechaRecepcion")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NumeroRecepcion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Observaciones")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("ProveedorId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("TotalCosto")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NumeroRecepcion")
+                        .IsUnique();
+
+                    b.HasIndex("ProveedorId");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.ToTable("RecepcionesMercaderia", (string)null);
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.RecepcionMercaderiaCorreccion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("Fecha")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSDATETIME()");
+
+                    b.Property<string>("Motivo")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int>("RecepcionMercaderiaId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("RecepcionMercaderiaId", "Fecha");
+
+                    b.ToTable("RecepcionesMercaderiaCorrecciones", (string)null);
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.RecepcionMercaderiaCorreccionDetalle", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Cantidad")
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<int>("ProductoId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RecepcionMercaderiaCorreccionId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductoId");
+
+                    b.HasIndex("RecepcionMercaderiaCorreccionId", "ProductoId")
+                        .IsUnique();
+
+                    b.ToTable("RecepcionesMercaderiaCorreccionesDetalles", (string)null);
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.RecepcionMercaderiaDetalle", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Cantidad")
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal?>("CostoUnitario")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("ProductoId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RecepcionMercaderiaId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("TotalCosto")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductoId");
+
+                    b.HasIndex("RecepcionMercaderiaId", "ProductoId")
+                        .IsUnique();
+
+                    b.ToTable("RecepcionesMercaderiaDetalles", (string)null);
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.RecepcionMercaderiaEvento", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Detalle")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime>("Fecha")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSDATETIME()");
+
+                    b.Property<int>("RecepcionMercaderiaId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("RecepcionMercaderiaId", "Fecha");
+
+                    b.ToTable("RecepcionesMercaderiaEventos", (string)null);
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.SesionCaja", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CajaId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("Diferencia")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("EfectivoDeclarado")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("EfectivoEsperado")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("FechaApertura")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("FechaCierre")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ObservacionesCierre")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<decimal>("SaldoInicial")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("UsuarioAperturaId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("UsuarioCierreId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CajaId")
+                        .IsUnique()
+                        .HasFilter("[Estado] = 'Abierta'");
+
+                    b.HasIndex("UsuarioAperturaId");
+
+                    b.HasIndex("UsuarioCierreId");
+
+                    b.ToTable("SesionesCaja", (string)null);
+                });
+
             modelBuilder.Entity("VerduleriaAugust.Api.Models.Stock", b =>
                 {
                     b.Property<int>("Id")
@@ -275,6 +791,57 @@ namespace VerduleriaAugust.Api.Migrations
                     b.ToTable("Stock", (string)null);
                 });
 
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.Usuario", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("DebeCambiarPassword")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSDATETIME()");
+
+                    b.Property<string>("NombreUsuario")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("NombreUsuarioNormalizado")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Rol")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NombreUsuarioNormalizado")
+                        .IsUnique();
+
+                    b.ToTable("Usuarios", (string)null);
+                });
+
             modelBuilder.Entity("VerduleriaAugust.Api.Models.Venta", b =>
                 {
                     b.Property<int>("Id")
@@ -301,10 +868,21 @@ namespace VerduleriaAugust.Api.Migrations
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("SYSDATETIME()");
 
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(36)
+                        .HasColumnType("nvarchar(36)");
+
+                    b.Property<string>("MotivoDescuento")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<string>("NumeroVenta")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("SesionCajaId")
+                        .HasColumnType("int");
 
                     b.Property<decimal>("Subtotal")
                         .HasColumnType("decimal(18,2)");
@@ -312,14 +890,59 @@ namespace VerduleriaAugust.Api.Migrations
                     b.Property<decimal>("Total")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<int?>("UsuarioDescuentoId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CajaId");
 
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("[IdempotencyKey] IS NOT NULL");
+
                     b.HasIndex("NumeroVenta")
                         .IsUnique();
 
+                    b.HasIndex("SesionCajaId");
+
+                    b.HasIndex("UsuarioDescuentoId");
+
                     b.ToTable("Ventas", (string)null);
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.VentaAnulacion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("FechaAnulacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSDATETIME()");
+
+                    b.Property<string>("Motivo")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("VentaId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("VentaId")
+                        .IsUnique();
+
+                    b.ToTable("VentaAnulaciones", (string)null);
                 });
 
             modelBuilder.Entity("VerduleriaAugust.Api.Models.VentaDetalle", b =>
@@ -359,6 +982,80 @@ namespace VerduleriaAugust.Api.Migrations
                     b.ToTable("VentaDetalles", (string)null);
                 });
 
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.AuditoriaUsuario", b =>
+                {
+                    b.HasOne("VerduleriaAugust.Api.Models.Usuario", "UsuarioActor")
+                        .WithMany()
+                        .HasForeignKey("UsuarioActorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("VerduleriaAugust.Api.Models.Usuario", "UsuarioObjetivo")
+                        .WithMany()
+                        .HasForeignKey("UsuarioObjetivoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("UsuarioActor");
+
+                    b.Navigation("UsuarioObjetivo");
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.Balanza", b =>
+                {
+                    b.HasOne("VerduleriaAugust.Api.Models.Caja", "Caja")
+                        .WithMany("Balanzas")
+                        .HasForeignKey("CajaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Caja");
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.HistorialPrecio", b =>
+                {
+                    b.HasOne("VerduleriaAugust.Api.Models.Producto", "Producto")
+                        .WithMany("HistorialPrecios")
+                        .HasForeignKey("ProductoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VerduleriaAugust.Api.Models.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Producto");
+
+                    b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.MovimientoCaja", b =>
+                {
+                    b.HasOne("VerduleriaAugust.Api.Models.SesionCaja", "SesionCaja")
+                        .WithMany()
+                        .HasForeignKey("SesionCajaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VerduleriaAugust.Api.Models.Usuario", "UsuarioAnulacion")
+                        .WithMany()
+                        .HasForeignKey("UsuarioAnulacionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("VerduleriaAugust.Api.Models.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("SesionCaja");
+
+                    b.Navigation("Usuario");
+
+                    b.Navigation("UsuarioAnulacion");
+                });
+
             modelBuilder.Entity("VerduleriaAugust.Api.Models.MovimientoStock", b =>
                 {
                     b.HasOne("VerduleriaAugust.Api.Models.Producto", "Producto")
@@ -367,7 +1064,14 @@ namespace VerduleriaAugust.Api.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("VerduleriaAugust.Api.Models.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Producto");
+
+                    b.Navigation("Usuario");
                 });
 
             modelBuilder.Entity("VerduleriaAugust.Api.Models.PagoVenta", b =>
@@ -400,6 +1104,127 @@ namespace VerduleriaAugust.Api.Migrations
                     b.Navigation("Categoria");
                 });
 
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.RecepcionMercaderia", b =>
+                {
+                    b.HasOne("VerduleriaAugust.Api.Models.Proveedor", "Proveedor")
+                        .WithMany()
+                        .HasForeignKey("ProveedorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VerduleriaAugust.Api.Models.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Proveedor");
+
+                    b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.RecepcionMercaderiaCorreccion", b =>
+                {
+                    b.HasOne("VerduleriaAugust.Api.Models.RecepcionMercaderia", "RecepcionMercaderia")
+                        .WithMany("Correcciones")
+                        .HasForeignKey("RecepcionMercaderiaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("VerduleriaAugust.Api.Models.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("RecepcionMercaderia");
+
+                    b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.RecepcionMercaderiaCorreccionDetalle", b =>
+                {
+                    b.HasOne("VerduleriaAugust.Api.Models.Producto", "Producto")
+                        .WithMany()
+                        .HasForeignKey("ProductoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VerduleriaAugust.Api.Models.RecepcionMercaderiaCorreccion", "RecepcionMercaderiaCorreccion")
+                        .WithMany("Detalles")
+                        .HasForeignKey("RecepcionMercaderiaCorreccionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Producto");
+
+                    b.Navigation("RecepcionMercaderiaCorreccion");
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.RecepcionMercaderiaDetalle", b =>
+                {
+                    b.HasOne("VerduleriaAugust.Api.Models.Producto", "Producto")
+                        .WithMany()
+                        .HasForeignKey("ProductoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VerduleriaAugust.Api.Models.RecepcionMercaderia", "RecepcionMercaderia")
+                        .WithMany("Detalles")
+                        .HasForeignKey("RecepcionMercaderiaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Producto");
+
+                    b.Navigation("RecepcionMercaderia");
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.RecepcionMercaderiaEvento", b =>
+                {
+                    b.HasOne("VerduleriaAugust.Api.Models.RecepcionMercaderia", "RecepcionMercaderia")
+                        .WithMany("Eventos")
+                        .HasForeignKey("RecepcionMercaderiaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("VerduleriaAugust.Api.Models.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("RecepcionMercaderia");
+
+                    b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.SesionCaja", b =>
+                {
+                    b.HasOne("VerduleriaAugust.Api.Models.Caja", "Caja")
+                        .WithMany("Sesiones")
+                        .HasForeignKey("CajaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VerduleriaAugust.Api.Models.Usuario", "UsuarioApertura")
+                        .WithMany()
+                        .HasForeignKey("UsuarioAperturaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VerduleriaAugust.Api.Models.Usuario", "UsuarioCierre")
+                        .WithMany()
+                        .HasForeignKey("UsuarioCierreId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Caja");
+
+                    b.Navigation("UsuarioApertura");
+
+                    b.Navigation("UsuarioCierre");
+                });
+
             modelBuilder.Entity("VerduleriaAugust.Api.Models.Stock", b =>
                 {
                     b.HasOne("VerduleriaAugust.Api.Models.Producto", "Producto")
@@ -419,7 +1244,40 @@ namespace VerduleriaAugust.Api.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("VerduleriaAugust.Api.Models.SesionCaja", "SesionCaja")
+                        .WithMany("Ventas")
+                        .HasForeignKey("SesionCajaId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("VerduleriaAugust.Api.Models.Usuario", "UsuarioDescuento")
+                        .WithMany()
+                        .HasForeignKey("UsuarioDescuentoId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Caja");
+
+                    b.Navigation("SesionCaja");
+
+                    b.Navigation("UsuarioDescuento");
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.VentaAnulacion", b =>
+                {
+                    b.HasOne("VerduleriaAugust.Api.Models.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VerduleriaAugust.Api.Models.Venta", "Venta")
+                        .WithOne("Anulacion")
+                        .HasForeignKey("VerduleriaAugust.Api.Models.VentaAnulacion", "VentaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Usuario");
+
+                    b.Navigation("Venta");
                 });
 
             modelBuilder.Entity("VerduleriaAugust.Api.Models.VentaDetalle", b =>
@@ -443,6 +1301,10 @@ namespace VerduleriaAugust.Api.Migrations
 
             modelBuilder.Entity("VerduleriaAugust.Api.Models.Caja", b =>
                 {
+                    b.Navigation("Balanzas");
+
+                    b.Navigation("Sesiones");
+
                     b.Navigation("Ventas");
                 });
 
@@ -458,11 +1320,34 @@ namespace VerduleriaAugust.Api.Migrations
 
             modelBuilder.Entity("VerduleriaAugust.Api.Models.Producto", b =>
                 {
+                    b.Navigation("HistorialPrecios");
+
                     b.Navigation("Stock");
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.RecepcionMercaderia", b =>
+                {
+                    b.Navigation("Correcciones");
+
+                    b.Navigation("Detalles");
+
+                    b.Navigation("Eventos");
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.RecepcionMercaderiaCorreccion", b =>
+                {
+                    b.Navigation("Detalles");
+                });
+
+            modelBuilder.Entity("VerduleriaAugust.Api.Models.SesionCaja", b =>
+                {
+                    b.Navigation("Ventas");
                 });
 
             modelBuilder.Entity("VerduleriaAugust.Api.Models.Venta", b =>
                 {
+                    b.Navigation("Anulacion");
+
                     b.Navigation("Detalles");
 
                     b.Navigation("Pagos");

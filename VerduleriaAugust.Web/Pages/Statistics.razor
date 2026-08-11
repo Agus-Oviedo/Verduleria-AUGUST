@@ -1,0 +1,63 @@
+@page "/estadisticas"
+@attribute [Authorize(Roles = "Administrador,Encargado")]
+@inject StatisticsService StatisticsService
+@inject CashRegistersService CashRegistersService
+@inject NavigationManager Navigation
+
+<PageTitle>Estadísticas · Augustu</PageTitle>
+
+<div class="stats-page">
+    <header><button class="back" @onclick="GoBack">← Panel principal</button><div><strong>Augustu</strong><span>Dashboard comercial</span></div><button class="refresh" @onclick="Load">Actualizar</button></header>
+    <main>
+        <section class="heading"><div><p>ANÁLISIS</p><h1>Rendimiento del negocio</h1><span>Ventas finalizadas y arqueos del período seleccionado.</span></div><small>@DateTime.Now.ToString("dd/MM/yyyy HH:mm")</small></section>
+        <section class="filters"><label>Desde<input type="date" @bind="From" @bind:format="yyyy-MM-dd" /></label><label>Hasta<input type="date" @bind="To" @bind:format="yyyy-MM-dd" /></label><label>Caja<select @bind="CashRegisterId"><option value="">Todas las cajas</option>@foreach (var register in CashRegisters) { <option value="@register.Id">@register.Nombre</option> }</select></label><button @onclick="ApplyFilters">Aplicar filtros</button><button class="preset" @onclick="LastThirtyDays">Últimos 30 días</button></section>
+        @if (IsLoading) { <div class="message">Calculando estadísticas…</div> }
+        else if (Error is not null) { <div class="message error">@Error</div> }
+        else if (Data is not null)
+        {
+            <section class="metrics">
+                <article class="primary"><span>Facturación</span><strong>$ @Data.Resumen.FacturacionTotal.ToString("N2")</strong><small>@Data.Resumen.CantidadVentas venta(s)</small><em class="variation @VariationClass(Data.Comparacion.VariacionFacturacion)">@VariationText(Data.Comparacion.VariacionFacturacion) vs. período anterior</em></article>
+                <article><span>Ticket promedio</span><strong>$ @Data.Resumen.TicketPromedio.ToString("N2")</strong><small>Por operación finalizada</small><em class="variation @VariationClass(Data.Comparacion.VariacionTicketPromedio)">@VariationText(Data.Comparacion.VariacionTicketPromedio)</em></article>
+                <article><span>Productos vendidos</span><strong>@Data.Resumen.KilosVendidos.ToString("N3") kg</strong><small>@Data.Resumen.UnidadesVendidas.ToString("N3") unidades</small></article>
+                <article class="@(Data.Resumen.DiferenciaArqueos < 0 ? "warning" : "")"><span>Diferencia de arqueos</span><strong>$ @Data.Resumen.DiferenciaArqueos.ToString("N2")</strong><small>Suma de faltantes y sobrantes</small></article>
+                <article><span>Ventas anuladas</span><strong>@Data.Resumen.VentasAnuladas</strong><small>@Data.Resumen.PorcentajeAnulacion.ToString("N2")% de operaciones</small></article>
+            </section>
+
+            <section class="alerts-strip"><div><i>○</i><span><strong>@Data.Alertas.ProductosSinVentas</strong> productos sin ventas</span></div><div><i>!</i><span><strong>@Data.Alertas.ProductosBajoStock</strong> bajo stock</span></div><div><i>×</i><span><strong>@Data.Alertas.VentasAnuladas</strong> anuladas · $ @Data.Alertas.ImporteAnulado.ToString("N2")</span></div><div><i>±</i><span><strong>@Data.Alertas.ArqueosConDiferencia</strong> arqueos con diferencia</span></div></section>
+
+            <section class="dashboard-grid">
+                <article class="panel daily-panel"><div class="panel-title"><div><h2>Evolución diaria</h2><span>Facturación por día</span></div><b>$ @MaxDaily.ToString("N2") máx.</b></div>@if (DailySeries.Count == 0) { <p class="empty">Sin ventas en el período.</p> } else { <div class="daily-chart">@foreach (var day in DailySeries) { <div class="day" title="@day.Fecha.ToString("dd/MM"): $ @day.FacturacionTotal.ToString("N2")"><span><i style="height:@DailyHeight(day.FacturacionTotal)%"></i></span><small>@day.Fecha.ToString("dd/MM")</small></div> }</div> }</article>
+                <article class="panel cash-panel"><div class="panel-title"><div><h2>Ventas por caja</h2><span>Comparación de facturación</span></div></div>@if (Data.VentasPorCaja.Count == 0) { <p class="empty">Sin ventas por caja.</p> } else { <div class="cash-bars">@foreach (var item in Data.VentasPorCaja) { <div><header><span><strong>@item.Caja</strong><small>@item.CantidadVentas ventas · ticket $ @item.TicketPromedio.ToString("N2")</small></span><b>$ @item.FacturacionTotal.ToString("N2")</b></header><i><em style="width:@CashWidth(item.FacturacionTotal)%"></em></i></div> }</div> }</article>
+                <article class="panel payment-panel"><div class="panel-title"><div><h2>Formas de pago</h2><span>Distribución de cobros</span></div></div>@if (Data.FormasPago.Count == 0) { <p class="empty">Sin pagos registrados.</p> } else { <div class="payment-stack">@for (var index = 0; index < Data.FormasPago.Count; index++) { var payment = Data.FormasPago[index]; <i style="width:@PaymentWidth(payment.TotalCobrado)%;background:@Color(index)" title="@payment.FormaPago"></i> }</div><div class="payment-legend">@for (var index = 0; index < Data.FormasPago.Count; index++) { var payment = Data.FormasPago[index]; <div><i style="background:@Color(index)"></i><span>@payment.FormaPago<small>@payment.CantidadPagos pago(s)</small></span><strong>$ @payment.TotalCobrado.ToString("N2")</strong></div> }</div> }</article>
+                <article class="panel category-panel"><div class="panel-title"><div><h2>Ventas por categoría</h2><span>Participación en la facturación</span></div></div>@if (Data.VentasPorCategoria.Count == 0) { <p class="empty">Sin categorías vendidas.</p> } else { <div class="category-bars">@foreach (var category in Data.VentasPorCategoria) { <div><span><strong>@category.Categoria</strong><small>@category.CantidadVendida.ToString("N3") vendidos</small></span><b>$ @category.FacturacionTotal.ToString("N2")</b><i><em style="width:@CategoryWidth(category.FacturacionTotal)%"></em></i></div> }</div> }</article>
+                <article class="panel hour-panel"><div class="panel-title"><div><h2>Ventas por hora</h2><span>Horarios de mayor movimiento</span></div></div>@if (Data.VentasPorHora.Count == 0) { <p class="empty">Sin horarios registrados.</p> } else { <div class="hour-chart">@for (var hour = 0; hour < 24; hour++) { var item = Data.VentasPorHora.FirstOrDefault(value => value.Hora == hour); var count = item?.CantidadVentas ?? 0; <div title="@hour.ToString("00"):00 · @count ventas"><span><i style="height:@HourHeight(count)%"></i></span><small>@hour.ToString("00")h</small></div> }</div> }</article>
+                <article class="panel products-panel"><div class="panel-title"><div><h2>Productos con mayor facturación</h2><span>Top 10 del período</span></div></div>@if (Data.ProductosMasVendidos.Count == 0) { <p class="empty">Sin productos vendidos.</p> } else { <div class="product-list">@for (var index = 0; index < Data.ProductosMasVendidos.Count; index++) { var product = Data.ProductosMasVendidos[index]; <div><b>@(index + 1)</b><span><strong>@product.Producto</strong><small>@product.Codigo · @product.CantidadVendida.ToString("N3") vendidos</small></span><em>$ @product.FacturacionTotal.ToString("N2")</em></div> }</div> }</article>
+            </section>
+        }
+    </main>
+</div>
+
+@code {
+    private StatisticsDashboard? Data;
+    private List<CashRegisterSummary> CashRegisters { get; } = [];
+    private List<DailySaleStatistic> DailySeries { get; } = [];
+    private bool IsLoading;
+    private string? Error;
+    private DateTime? From = DateTime.Today.AddDays(-29), To = DateTime.Today;
+    private int? CashRegisterId;
+    private decimal MaxDaily => DailySeries.Count == 0 ? 0 : DailySeries.Max(day => day.FacturacionTotal);
+    protected override async Task OnInitializedAsync() { try { CashRegisters.AddRange(await CashRegistersService.GetActiveAsync()); } catch { } await Load(); }
+    private async Task Load() { if (!From.HasValue || !To.HasValue) { Error = "Seleccioná ambas fechas."; return; } IsLoading = true; Error = null; try { Data = await StatisticsService.GetDashboardAsync(From.Value, To.Value, CashRegisterId); BuildDailySeries(); } catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException) { Error = ex.Message; } finally { IsLoading = false; } }
+    private async Task ApplyFilters() => await Load();
+    private async Task LastThirtyDays() { From = DateTime.Today.AddDays(-29); To = DateTime.Today; CashRegisterId = null; await Load(); }
+    private void BuildDailySeries() { DailySeries.Clear(); if (Data is null) return; var values = Data.VentasPorDia.ToDictionary(item => item.Fecha.Date); for (var date = Data.Resumen.Desde.Date; date <= Data.Resumen.Hasta.Date; date = date.AddDays(1)) DailySeries.Add(values.TryGetValue(date, out var item) ? item : new DailySaleStatistic(date, 0, 0)); }
+    private decimal DailyHeight(decimal value) => MaxDaily <= 0 ? 0 : Math.Max(3, Math.Round(value / MaxDaily * 100, 1));
+    private decimal CashWidth(decimal value) { var max = Data?.VentasPorCaja.Count > 0 ? Data.VentasPorCaja.Max(item => item.FacturacionTotal) : 0; return max <= 0 ? 0 : Math.Round(value / max * 100, 1); }
+    private decimal PaymentWidth(decimal value) { var total = Data?.FormasPago.Sum(item => item.TotalCobrado) ?? 0; return total <= 0 ? 0 : Math.Round(value / total * 100, 2); }
+    private decimal CategoryWidth(decimal value) { var max = Data?.VentasPorCategoria.Count > 0 ? Data.VentasPorCategoria.Max(item => item.FacturacionTotal) : 0; return max <= 0 ? 0 : Math.Round(value / max * 100, 1); }
+    private decimal HourHeight(int value) { var max = Data?.VentasPorHora.Count > 0 ? Data.VentasPorHora.Max(item => item.CantidadVentas) : 0; return max <= 0 || value == 0 ? 0 : Math.Max(5, Math.Round(value * 100m / max, 1)); }
+    private static string VariationText(decimal value) => $"{(value > 0 ? "+" : "")}{value:N2}%";
+    private static string VariationClass(decimal value) => value < 0 ? "down" : value > 0 ? "up" : "flat";
+    private static string Color(int index) => new[] { "#28764e", "#e3a34b", "#4f7fb9", "#a8649d", "#75a65a", "#d06a5f" }[index % 6];
+    private void GoBack() => Navigation.NavigateTo("/");
+}

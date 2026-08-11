@@ -1,0 +1,65 @@
+@page "/cajas/historial"
+@attribute [Authorize]
+@inject CashRegistersService CashRegistersService
+@inject NavigationManager Navigation
+
+<PageTitle>Historial de turnos · Augustu</PageTitle>
+
+<div class="shift-page">
+    <header><button @onclick="GoToRegisters">← Volver a cajas</button><div><strong>Augustu</strong><span>Historial de caja</span></div><button @onclick="GoToDashboard">Panel principal</button></header>
+    <main>
+        <section class="title"><div><p>TESORERÍA</p><h1>Turnos y arqueos</h1><span>Aperturas, ventas, medios de pago y diferencias de caja.</span></div><b>@Total turno(s)</b></section>
+        <section class="filters">
+            <label>Usuario<input @bind="UserFilter" placeholder="Nombre del cajero" /></label>
+            <label>Estado<select @bind="StatusFilter"><option value="">Todos</option><option value="Abierta">Abiertos</option><option value="Cerrada">Cerrados</option></select></label>
+            <label>Desde<input type="date" @bind="FromFilter" @bind:format="yyyy-MM-dd" /></label>
+            <label>Hasta<input type="date" @bind="ToFilter" @bind:format="yyyy-MM-dd" /></label>
+            <button @onclick="ApplyFilters">Buscar</button>
+            <button class="clear" @onclick="ClearFilters">Limpiar</button>
+        </section>
+        @if (IsLoading) { <div class="state">Consultando turnos…</div> }
+        else if (Error is not null) { <div class="state error">@Error</div> }
+        else if (Shifts.Count == 0) { <div class="state">No hay turnos para los filtros seleccionados.</div> }
+        else
+        {
+            <section class="shift-list">
+                @foreach (var shift in Shifts)
+                {
+                    <article class="shift-card">
+                        <div class="shift-head"><div><span class="status @shift.Estado.ToLowerInvariant()">@shift.Estado</span><h2>@shift.Caja <small>@shift.CodigoCaja · Turno #@shift.Id</small></h2></div><div class="dates"><strong>@shift.FechaApertura.ToString("dd/MM/yyyy HH:mm")</strong><span>@(shift.FechaCierre?.ToString("dd/MM/yyyy HH:mm") ?? "En curso") · @Duration(shift.DuracionMinutos)</span></div></div>
+                        <div class="metrics"><div><span>Abrió</span><strong>@shift.UsuarioApertura</strong></div><div><span>Cerró</span><strong>@(shift.UsuarioCierre ?? "—")</strong></div><div><span>Saldo inicial</span><strong>$ @shift.SaldoInicial.ToString("N2")</strong></div><div><span>Ventas</span><strong>@shift.CantidadVentas · $ @shift.TotalVendido.ToString("N2")</strong></div><div><span>Efectivo esperado</span><strong>@Money(shift.EfectivoEsperado)</strong></div><div><span>Efectivo contado</span><strong>@Money(shift.EfectivoDeclarado)</strong></div><div class="difference @DifferenceClass(shift.Diferencia)"><span>Diferencia</span><strong>@Money(shift.Diferencia)</strong></div></div>
+                        <div class="payments">@if (shift.FormasPago.Count == 0) { <span>Sin pagos registrados</span> } else { @foreach (var payment in shift.FormasPago) { <span>@payment.FormaPago <b>$ @payment.Total.ToString("N2")</b></span> } }</div>
+                        @if (shift.Movimientos.Count > 0) { <div class="cash-movements"><strong>Movimientos de efectivo · +$ @shift.IngresosEfectivo.ToString("N2") / -$ @shift.RetirosEfectivo.ToString("N2")</strong>@foreach (var movement in shift.Movimientos) { <span class="@movement.Tipo.ToLowerInvariant() @(movement.Anulado?"cancelled":"")">@movement.Tipo $ @movement.Importe.ToString("N2") · @movement.Motivo · @(movement.Usuario ?? "Sistema") · @movement.Fecha.ToString("dd/MM HH:mm") @(movement.Anulado?$"· ANULADO: {movement.MotivoAnulacion}":"")</span> }</div> }
+                        @if (!string.IsNullOrWhiteSpace(shift.Observaciones)) { <p class="notes"><strong>Observaciones:</strong> @shift.Observaciones</p> }
+                    </article>
+                }
+            </section>
+            <nav class="pagination"><button disabled="@(Page <= 1)" @onclick="PreviousPage">← Anterior</button><span>Página @Page de @Math.Max(1, TotalPages)</span><button disabled="@(Page >= TotalPages)" @onclick="NextPage">Siguiente →</button></nav>
+        }
+    </main>
+</div>
+
+@code {
+    private List<CashShift> Shifts { get; } = [];
+    private bool IsLoading;
+    private string? Error, UserFilter, StatusFilter;
+    private DateTime? FromFilter, ToFilter;
+    private int Page = 1, Total, TotalPages;
+    protected override Task OnInitializedAsync() => Load();
+    private async Task Load() { IsLoading = true; Error = null; try { var result = await CashRegistersService.GetShiftsAsync(new CashShiftFilters(Page, 10, User: UserFilter, Status: StatusFilter, From: FromFilter?.Date, To: ToFilter?.Date.AddDays(1).AddTicks(-1))); Shifts.Clear(); Shifts.AddRange(result.Items); Total = result.Total; TotalPages = result.TotalPaginas; } catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException) { Error = ex.Message; } finally { IsLoading = false; } }
+    private async Task ApplyFilters() { Page = 1; await Load(); }
+    private async Task ClearFilters() { UserFilter = StatusFilter = null; FromFilter = ToFilter = null; Page = 1; await Load(); }
+    private async Task PreviousPage() { if (Page > 1) { Page--; await Load(); } }
+    private async Task NextPage() { if (Page < TotalPages) { Page++; await Load(); } }
+    private static string Duration(int? minutes) => minutes.HasValue ? $"{minutes.Value / 60} h {minutes.Value % 60} min" : "Turno abierto";
+    private static string Money(decimal? value) => value.HasValue ? $"$ {value.Value:N2}" : "—";
+    private static string DifferenceClass(decimal? value)
+    {
+        if (!value.HasValue) return "";
+        if (value.Value < 0) return "negative";
+        if (value.Value > 0) return "positive";
+        return "balanced";
+    }
+    private void GoToRegisters() => Navigation.NavigateTo("/cajas");
+    private void GoToDashboard() => Navigation.NavigateTo("/");
+}

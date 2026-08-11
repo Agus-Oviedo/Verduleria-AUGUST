@@ -1,0 +1,48 @@
+@page "/formas-pago"
+@attribute [Authorize(Roles = "Administrador,Encargado")]
+@inject PaymentMethodsService PaymentMethodsService
+@inject NavigationManager Navigation
+
+<PageTitle>Formas de pago · Augustu</PageTitle>
+
+<div class="payment-page">
+    <header><button @onclick="GoBack">← Panel principal</button><div><strong>Augustu</strong><span>Configuración de cobros</span></div><button class="new" @onclick="NewMethod">+ Nueva forma</button></header>
+    <main>
+        <section class="heading"><div><p>CONFIGURACIÓN</p><h1>Formas de pago</h1><span>Definí qué opciones aparecen al cobrar y en qué orden.</span></div><button @onclick="Load">Actualizar</button></section>
+        <section class="summary"><article><span>Activas</span><strong>@Methods.Count(method => method.Activa)</strong></article><article><span>Inactivas</span><strong>@Methods.Count(method => !method.Activa)</strong></article><article><span>Medios en efectivo</span><strong>@Methods.Count(method => method.EsEfectivo && method.Activa)</strong></article></section>
+        <section class="toolbar"><input @bind="Search" @bind:event="oninput" placeholder="Buscar forma de pago…" /><label><input type="checkbox" @bind="ShowInactive" /> Mostrar inactivas</label></section>
+        @if (IsLoading) { <div class="state">Consultando formas de pago…</div> }
+        else if (Error is not null) { <div class="state error">@Error</div> }
+        else
+        {
+            <section class="method-list">
+                @foreach (var method in FilteredMethods)
+                {
+                    <article class="method-card @(!method.Activa ? "inactive" : "")"><b class="order">@method.Orden</b><span class="icon">@(method.EsEfectivo ? "💵" : "💳")</span><div><h2>@method.Nombre</h2><small>@(method.EsEfectivo ? "Se suma al efectivo esperado del arqueo" : "Pago no efectivo") · @method.CantidadUsos operación(es)</small></div><em class="@(method.Activa ? "active" : "")">@(method.Activa ? "ACTIVA" : "INACTIVA")</em><button @onclick="() => Edit(method)">Editar</button></article>
+                }
+            </section>
+        }
+    </main>
+
+    @if (ShowDialog)
+    {
+        <div class="backdrop" @onclick="CloseDialog"><section class="dialog" @onclick:stopPropagation><button class="x" @onclick="CloseDialog">×</button><p>@(EditingId.HasValue ? "EDITAR" : "NUEVA FORMA")</p><h2>@(EditingId.HasValue ? "Actualizar forma de pago" : "Crear forma de pago")</h2><label>Nombre<input @bind="Name" maxlength="100" /></label><label>Orden de aparición<input type="number" min="0" max="9999" @bind="Order" /><small>Los números menores aparecen primero al cobrar.</small></label><div class="checks"><label><input type="checkbox" @bind="IsCash" /> Es efectivo</label><label><input type="checkbox" @bind="IsActive" /> Está activa</label></div>@if (EditingUses > 0 && !IsActive) { <div class="warning">Esta forma tiene @EditingUses pago(s) registrados. Se ocultará para ventas nuevas, pero el historial se conservará.</div> }@if (DialogError is not null) { <div class="dialog-error">@DialogError</div> }<button class="save" disabled="@IsSaving" @onclick="Save">@(IsSaving ? "Guardando…" : "Guardar cambios")</button></section></div>
+    }
+</div>
+
+@code {
+    private List<PaymentMethodAdmin> Methods { get; } = [];
+    private bool IsLoading, ShowInactive, ShowDialog, IsCash, IsActive = true, IsSaving;
+    private string? Error, Search, DialogError;
+    private int? EditingId;
+    private string Name = "";
+    private int Order, EditingUses;
+    private IEnumerable<PaymentMethodAdmin> FilteredMethods => Methods.Where(method => (ShowInactive || method.Activa) && (string.IsNullOrWhiteSpace(Search) || method.Nombre.Contains(Search, StringComparison.OrdinalIgnoreCase))).OrderBy(method => method.Orden).ThenBy(method => method.Nombre);
+    protected override Task OnInitializedAsync() => Load();
+    private async Task Load() { IsLoading = true; Error = null; try { Methods.Clear(); Methods.AddRange(await PaymentMethodsService.GetAllAsync()); } catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException) { Error = ex.Message; } finally { IsLoading = false; } }
+    private void NewMethod() { EditingId = null; Name = ""; Order = Methods.Count == 0 ? 0 : Methods.Max(method => method.Orden) + 10; IsCash = false; IsActive = true; EditingUses = 0; DialogError = null; ShowDialog = true; }
+    private void Edit(PaymentMethodAdmin method) { EditingId = method.Id; Name = method.Nombre; Order = method.Orden; IsCash = method.EsEfectivo; IsActive = method.Activa; EditingUses = method.CantidadUsos; DialogError = null; ShowDialog = true; }
+    private void CloseDialog() { if (!IsSaving) ShowDialog = false; }
+    private async Task Save() { if (string.IsNullOrWhiteSpace(Name)) { DialogError = "Ingresá un nombre."; return; } IsSaving = true; DialogError = null; try { if (EditingId.HasValue) await PaymentMethodsService.UpdateAsync(EditingId.Value, Name.Trim(), IsCash, IsActive, Order); else await PaymentMethodsService.CreateAsync(Name.Trim(), IsCash, IsActive, Order); ShowDialog = false; await Load(); } catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException) { DialogError = ex.Message; } finally { IsSaving = false; } }
+    private void GoBack() => Navigation.NavigateTo("/");
+}

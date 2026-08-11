@@ -1,0 +1,100 @@
+@page "/cajas"
+@attribute [Authorize]
+@inject CashRegistersService CashRegistersService
+@inject NavigationManager Navigation
+
+<PageTitle>Cajas · Augustu</PageTitle>
+
+<div class="registers-page">
+    <header><button class="back" @onclick="GoBack">← Panel principal</button><div><strong>Augustu</strong><span>Gestión de cajas</span></div><button class="sale" @onclick="GoToSale">Nueva venta</button></header>
+    <main>
+        <section class="heading"><div><p>TESORERÍA</p><h1>Cajas y turnos</h1><span>Control de aperturas, cierres y arqueos.</span></div><div class="heading-actions"><button class="history" @onclick="GoToHistory">Historial de turnos</button><button class="refresh" @onclick="Load">Actualizar</button></div></section>
+        @if (IsLoading) { <div class="message">Consultando cajas…</div> }
+        else if (Error is not null) { <div class="message error">@Error</div> }
+        else
+        {
+            <section class="register-grid">
+                @foreach (var register in Registers)
+                {
+                    <article class="register-card @(register.SesionAbierta is null ? "closed" : "open")">
+                        <div class="card-heading"><span class="dot"></span><div><h2>@register.Nombre</h2><small>@register.Codigo · @(register.PcIdentificador ?? "PC sin asignar")</small></div><b>@(register.SesionAbierta is null ? "CERRADA" : "ABIERTA")</b></div>
+                        @if (register.SesionAbierta is { } session)
+                        {
+                            <div class="session-data"><div><span>Desde</span><strong>@session.FechaApertura.ToString("dd/MM HH:mm")</strong></div><div><span>Saldo inicial</span><strong>$ @session.SaldoInicial.ToString("N2")</strong></div><div><span>Sesión</span><strong>#@session.Id</strong></div></div>
+                            <AuthorizeView Roles="Administrador,Encargado"><Authorized><button class="cash-movement" @onclick="() => OpenMovement(register)">Ingreso o retiro de efectivo</button></Authorized></AuthorizeView>
+                            <button class="close-register" @onclick="() => OpenClose(register)">Cerrar y arquear</button>
+                        }
+                        else
+                        {
+                            <p>Esta caja no tiene un turno activo.</p><button class="open-register" @onclick="() => OpenOpening(register)">Abrir caja</button>
+                        }
+                    </article>
+                }
+            </section>
+        }
+    </main>
+
+    @if (ShowOpenDialog)
+    {
+        <div class="backdrop" @onclick="CloseDialogs"><section class="dialog" @onclick:stopPropagation><button class="x" @onclick="CloseDialogs">×</button><p>APERTURA</p><h2>Abrir @Selected?.Nombre</h2><label>Saldo inicial en efectivo<input type="number" min="0" step="0.01" @bind="OpeningBalance" /></label>@if (DialogError is not null) { <div class="dialog-error">@DialogError</div> }<button class="confirm" disabled="@IsSaving" @onclick="OpenSelected">@(IsSaving ? "Abriendo…" : "Confirmar apertura")</button></section></div>
+    }
+    @if (ShowCloseDialog)
+    {
+        <div class="backdrop" @onclick="CloseDialogs">
+            <section class="dialog reconciliation-dialog" @onclick:stopPropagation>
+                <button class="x" @onclick="CloseDialogs">×</button><p>CIERRE Y ARQUEO</p><h2>Cerrar @Selected?.Nombre</h2>
+                @if (IsLoadingReconciliation) { <div class="reconciliation-loading">Calculando ventas y medios de pago…</div> }
+                else if (Reconciliation is not null)
+                {
+                    <div class="reconciliation-summary"><div><span>Saldo inicial</span><strong>$ @Reconciliation.SaldoInicial.ToString("N2")</strong></div><div><span>Ventas del turno</span><strong>@Reconciliation.CantidadVentas · $ @Reconciliation.TotalVendido.ToString("N2")</strong></div><div><span>Ingresos / retiros</span><strong>+$ @Reconciliation.IngresosEfectivo.ToString("N2") / -$ @Reconciliation.RetirosEfectivo.ToString("N2")</strong></div><div class="expected"><span>Efectivo esperado</span><strong>$ @Reconciliation.EfectivoEsperado.ToString("N2")</strong></div></div>
+                    <div class="payment-breakdown">@if (Reconciliation.FormasPago.Count == 0) { <span>Sin ventas registradas en este turno.</span> } else { @foreach (var payment in Reconciliation.FormasPago) { <div><span>@payment.FormaPago @(payment.EsEfectivo ? "· efectivo" : "")</span><strong>$ @payment.Total.ToString("N2")</strong></div> } }</div>
+                    @if (Reconciliation.Movimientos.Count > 0) { <div class="cash-movement-list"><h3>Movimientos de efectivo</h3>@foreach (var movement in Reconciliation.Movimientos) { <article class="@movement.Tipo.ToLowerInvariant() @(movement.Anulado ? "cancelled" : "")"><div><strong>@movement.Tipo · $ @movement.Importe.ToString("N2") @(movement.Anulado ? "· ANULADO" : "")</strong><span>@movement.Motivo</span>@if(movement.Anulado){<span>Corrección: @movement.MotivoAnulacion · @(movement.UsuarioAnulacion??"Sistema")</span>}</div><small>@movement.Fecha.ToString("dd/MM HH:mm") · @(movement.Usuario ?? "Sistema")</small>@if(!movement.Anulado){<button @onclick="() => BeginCancelMovement(movement)">Anular</button>}</article> }</div> }
+                }
+                <label>Efectivo contado<input type="number" min="0" step="0.01" @bind="DeclaredCash" /></label>
+                @if (Reconciliation is not null) { <div class="live-difference @(DeclaredCash - Reconciliation.EfectivoEsperado < 0 ? "negative" : "")"><span>Diferencia estimada</span><strong>$ @((DeclaredCash - Reconciliation.EfectivoEsperado).ToString("N2"))</strong></div> }
+                <label>Observaciones<textarea @bind="Notes" maxlength="500" placeholder="Opcional; explicá faltantes o sobrantes"></textarea></label>
+                @if (DialogError is not null) { <div class="dialog-error">@DialogError</div> }
+                <button class="confirm danger" disabled="@(IsSaving || IsLoadingReconciliation || Reconciliation is null)" @onclick="CloseSelected">@(IsSaving ? "Cerrando…" : "Confirmar cierre")</button>
+            </section>
+        </div>
+    }
+    @if (ShowMovementDialog)
+    {
+        <div class="backdrop" @onclick="CloseDialogs"><section class="dialog" @onclick:stopPropagation><button class="x" @onclick="CloseDialogs">×</button><p>MOVIMIENTO DE EFECTIVO</p><h2>@Selected?.Nombre</h2><label>Tipo<select @bind="MovementType"><option>Ingreso</option><option>Retiro</option></select></label><label>Importe<input type="number" min="0.01" step="0.01" @bind="MovementAmount" /></label><label>Motivo<textarea maxlength="300" @bind="MovementReason" placeholder="Ej.: retiro para proveedor"></textarea></label>@if (DialogError is not null) { <div class="dialog-error">@DialogError</div> }<button class="confirm" disabled="@IsSaving" @onclick="SaveMovement">@(IsSaving ? "Registrando…" : "Registrar movimiento")</button></section></div>
+    }
+    @if (MovementToCancel is not null)
+    {
+        <div class="backdrop"><section class="dialog" @onclick:stopPropagation><p>CORRECCIÓN AUDITADA</p><h2>Anular @MovementToCancel.Tipo de $ @MovementToCancel.Importe.ToString("N2")</h2><label>Motivo<textarea maxlength="300" @bind="CancellationReason"></textarea></label>@if(DialogError is not null){<div class="dialog-error">@DialogError</div>}<button class="confirm danger" disabled="@IsSaving" @onclick="ConfirmCancelMovement">Confirmar anulación</button><button class="secondary-dialog" disabled="@IsSaving" @onclick="CancelMovementDialog">Volver</button></section></div>
+    }
+    @if (LastClose is not null) { <div class="result"><button @onclick="() => LastClose = null">×</button><strong>Arqueo completado</strong><span>Esperado: $ @LastClose.EfectivoEsperado?.ToString("N2") · Declarado: $ @LastClose.EfectivoDeclarado?.ToString("N2") · Diferencia: $ @LastClose.Diferencia?.ToString("N2")</span></div> }
+</div>
+
+@code {
+    private List<CashRegisterSummary> Registers { get; } = [];
+    private bool IsLoading, ShowOpenDialog, ShowCloseDialog, ShowMovementDialog, IsSaving, IsLoadingReconciliation;
+    private string? Error, Notes, DialogError;
+    private CashRegisterSummary? Selected;
+    private decimal OpeningBalance, DeclaredCash;
+    private decimal MovementAmount;
+    private string MovementType = "Ingreso", MovementReason = "";
+    private CashReconciliation? Reconciliation;
+    private CashMovement? MovementToCancel;
+    private string CancellationReason = "";
+    private CloseRegisterResult? LastClose;
+
+    protected override Task OnInitializedAsync() => Load();
+    private async Task Load() { IsLoading = true; Error = null; try { Registers.Clear(); Registers.AddRange(await CashRegistersService.GetActiveAsync()); } catch (Exception ex) when (ex is HttpRequestException or UnauthorizedAccessException) { Error = ex.Message; } finally { IsLoading = false; } }
+    private void OpenOpening(CashRegisterSummary register) { Selected = register; OpeningBalance = 0; DialogError = null; ShowOpenDialog = true; }
+    private async Task OpenClose(CashRegisterSummary register) { Selected = register; DeclaredCash = 0; Notes = null; DialogError = null; Reconciliation = null; ShowCloseDialog = true; IsLoadingReconciliation = true; try { if (register.SesionAbierta is not null) Reconciliation = await CashRegistersService.GetReconciliationAsync(register.SesionAbierta.Id); } catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException) { DialogError = ex.Message; } finally { IsLoadingReconciliation = false; } }
+    private void OpenMovement(CashRegisterSummary register) { Selected = register; MovementType = "Ingreso"; MovementAmount = 0; MovementReason = ""; DialogError = null; ShowMovementDialog = true; }
+    private void CloseDialogs() { if (!IsSaving) { ShowOpenDialog = false; ShowCloseDialog = false; ShowMovementDialog = false; Reconciliation = null; } }
+    private async Task OpenSelected() { if (Selected is null) return; IsSaving = true; DialogError = null; try { await CashRegistersService.OpenAsync(Selected.Id, OpeningBalance); ShowOpenDialog = false; await Load(); } catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException) { DialogError = ex.Message; } finally { IsSaving = false; } }
+    private async Task CloseSelected() { if (Selected?.SesionAbierta is null) return; IsSaving = true; DialogError = null; try { LastClose = await CashRegistersService.CloseAsync(Selected.SesionAbierta.Id, DeclaredCash, Notes); ShowCloseDialog = false; Reconciliation = null; await Load(); } catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException) { DialogError = ex.Message; } finally { IsSaving = false; } }
+    private async Task SaveMovement() { if (Selected?.SesionAbierta is null) return; if (MovementAmount <= 0 || MovementReason.Trim().Length < 5) { DialogError = "Indicá un importe mayor a cero y un motivo de al menos 5 caracteres."; return; } IsSaving = true; DialogError = null; try { await CashRegistersService.AddCashMovementAsync(Selected.SesionAbierta.Id, MovementType, MovementAmount, MovementReason.Trim()); ShowMovementDialog = false; } catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException) { DialogError = ex.Message; } finally { IsSaving = false; } }
+    private void BeginCancelMovement(CashMovement movement) { MovementToCancel = movement; CancellationReason = ""; DialogError = null; }
+    private void CancelMovementDialog() { if (!IsSaving) MovementToCancel = null; }
+    private async Task ConfirmCancelMovement() { if (MovementToCancel is null || Selected?.SesionAbierta is null) return; if (CancellationReason.Trim().Length < 5) { DialogError = "El motivo debe tener al menos 5 caracteres."; return; } IsSaving = true; DialogError = null; try { await CashRegistersService.CancelCashMovementAsync(MovementToCancel.Id, CancellationReason.Trim()); MovementToCancel = null; Reconciliation = await CashRegistersService.GetReconciliationAsync(Selected.SesionAbierta.Id); } catch(Exception ex) when(ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException){DialogError=ex.Message;} finally { IsSaving=false; } }
+    private void GoBack() => Navigation.NavigateTo("/");
+    private void GoToSale() => Navigation.NavigateTo("/ventas/nueva");
+    private void GoToHistory() => Navigation.NavigateTo("/cajas/historial");
+}

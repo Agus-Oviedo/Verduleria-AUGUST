@@ -1,0 +1,9 @@
+using System.ComponentModel.DataAnnotations;
+namespace VerduleriaAugust.Api.DTOs;
+public sealed class CrearProveedorDto { [Required, StringLength(150, MinimumLength=2)] public string Nombre { get; set; } = string.Empty; [StringLength(20)] public string? Cuit { get; set; } [StringLength(150)] public string? Contacto { get; set; } }
+public sealed class CrearRecepcionDetalleDto { [Range(1,int.MaxValue)] public int ProductoId { get; set; } [Range(typeof(decimal),"0.001","79228162514264337593543950335")] public decimal Cantidad { get; set; } [Range(typeof(decimal),"0","79228162514264337593543950335")] public decimal? CostoUnitario { get; set; } }
+public sealed class CrearRecepcionMercaderiaDto { [Range(1,int.MaxValue)] public int ProveedorId { get; set; } [StringLength(100)] public string? Comprobante { get; set; } [StringLength(500)] public string? Observaciones { get; set; } [Required,MinLength(1)] public List<CrearRecepcionDetalleDto> Items { get; set; } = []; }
+public sealed class ActualizarDatosRecepcionDto { [Range(1,int.MaxValue)] public int ProveedorId { get; set; } [StringLength(100)] public string? Comprobante { get; set; } [StringLength(500)] public string? Observaciones { get; set; } [Required,StringLength(300,MinimumLength=5)] public string Motivo { get; set; } = string.Empty; }
+public sealed class AnularRecepcionDto { [Required,StringLength(300,MinimumLength=5)] public string Motivo { get; set; } = string.Empty; }
+public sealed class CorregirRecepcionDetalleDto { [Range(1,int.MaxValue)] public int ProductoId { get; set; } [Range(typeof(decimal),"0.001","79228162514264337593543950335")] public decimal Cantidad { get; set; } }
+public sealed class CorregirRecepcionDto { [Required,StringLength(300,MinimumLength=5)] public string Motivo { get; set; } = string.Empty; [Required,MinLength(1)] public List<CorregirRecepcionDetalleDto> Items { get; set; } = []; }

@@ -1,0 +1,40 @@
+@page "/perfil"
+@attribute [Authorize]
+@inject AuthService Auth
+@inject NavigationManager Navigation
+
+<PageTitle>Mi perfil · Augustu</PageTitle>
+
+<div class="profile-page">
+    <header><button @onclick="GoBack">← Panel principal</button><strong>Augustu</strong><span>Mi perfil</span></header>
+    <main>
+        <section class="profile-summary">
+            <AuthorizeView Context="authContext"><Authorized>
+                <span class="avatar">@Initials(authContext.User.Identity?.Name)</span>
+                <div><p>CUENTA PERSONAL</p><h1>@authContext.User.Identity?.Name</h1><span>@Role(authContext.User)</span></div>
+            </Authorized></AuthorizeView>
+        </section>
+
+        <section class="password-card">
+            <div class="card-heading"><div><p>SEGURIDAD</p><h2>Cambiar contraseña</h2><span>Elegí una clave privada que no utilices en otros servicios.</span></div><span class="shield">🔒</span></div>
+            <label>Contraseña actual<span class="password-field"><input type="@(ShowCurrent ? "text" : "password")" @bind="CurrentPassword" autocomplete="current-password"/><button type="button" @onclick="() => ShowCurrent = !ShowCurrent">@(ShowCurrent ? "Ocultar" : "Ver")</button></span></label>
+            <label>Nueva contraseña<span class="password-field"><input type="@(ShowNew ? "text" : "password")" @bind="NewPassword" autocomplete="new-password"/><button type="button" @onclick="() => ShowNew = !ShowNew">@(ShowNew ? "Ocultar" : "Ver")</button></span><small>Mínimo 10 caracteres y diferente de la contraseña actual.</small></label>
+            <label>Confirmar nueva contraseña<span class="password-field"><input type="@(ShowConfirmation ? "text" : "password")" @bind="Confirmation" autocomplete="new-password"/><button type="button" @onclick="() => ShowConfirmation = !ShowConfirmation">@(ShowConfirmation ? "Ocultar" : "Ver")</button></span></label>
+            @if (ErrorMessage is not null) { <div class="feedback error">@ErrorMessage</div> }
+            @if (SuccessMessage is not null) { <div class="feedback success">@SuccessMessage</div> }
+            <button class="save-button" disabled="@IsSaving" @onclick="ChangePasswordAsync">@(IsSaving ? "Actualizando…" : "Actualizar contraseña")</button>
+        </section>
+
+        <aside><strong>¿Olvidaste la contraseña?</strong><span>Solicitá a un administrador un acceso temporal desde el módulo Usuarios. Nadie puede consultar tu contraseña privada.</span></aside>
+    </main>
+</div>
+
+@code {
+    private string CurrentPassword { get; set; } = ""; private string NewPassword { get; set; } = ""; private string Confirmation { get; set; } = "";
+    private bool ShowCurrent { get; set; } private bool ShowNew { get; set; } private bool ShowConfirmation { get; set; } private bool IsSaving { get; set; }
+    private string? ErrorMessage { get; set; } private string? SuccessMessage { get; set; }
+    private async Task ChangePasswordAsync() { ErrorMessage=null;SuccessMessage=null;if(NewPassword.Length<10){ErrorMessage="La nueva contraseña debe tener al menos 10 caracteres.";return;}if(NewPassword!=Confirmation){ErrorMessage="Las contraseñas nuevas no coinciden.";return;}IsSaving=true;var result=await Auth.ChangePasswordAsync(CurrentPassword,NewPassword);IsSaving=false;if(result.Success){CurrentPassword=NewPassword=Confirmation="";ShowCurrent=ShowNew=ShowConfirmation=false;SuccessMessage="Contraseña actualizada correctamente.";}else ErrorMessage=result.ErrorMessage; }
+    private static string Initials(string? name)=>string.IsNullOrWhiteSpace(name)?"?":name[..Math.Min(2,name.Length)].ToUpperInvariant();
+    private static string Role(System.Security.Claims.ClaimsPrincipal user)=>user.Claims.FirstOrDefault(c=>c.Type=="role"||c.Type.EndsWith("/role"))?.Value??"Usuario";
+    private void GoBack()=>Navigation.NavigateTo("/");
+}

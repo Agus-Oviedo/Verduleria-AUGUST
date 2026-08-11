@@ -8,5 +8,9 @@ public class FormaPago
 
     public bool Activa { get; set; } = true;
 
+    public bool EsEfectivo { get; set; }
+
+    public int Orden { get; set; }
+
     public ICollection<PagoVenta> PagosVenta { get; set; } = new List<PagoVenta>();
 }

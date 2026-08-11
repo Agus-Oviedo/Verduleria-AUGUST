@@ -1,0 +1,39 @@
+@page "/balanzas"
+@attribute [Authorize(Roles = "Administrador,Encargado")]
+@inject ScalesService ScalesService
+@inject CashRegistersService CashRegistersService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Balanzas · Augustu</PageTitle>
+<div class="scales-page">
+ <header><button @onclick="GoBack">← Panel principal</button><div><strong>Augustu</strong><span>Equipos de pesaje</span></div><button class="new" @onclick="NewScale">+ Registrar balanza</button></header>
+ <main>
+  <section class="heading"><div><p>INTEGRACIÓN LOCAL</p><h1>Balanzas y agentes</h1><span>Cada caja admite una balanza. El agente local es quien lee el puerto RS-232.</span></div><button @onclick="Load">Actualizar</button></section>
+  <aside class="notice"><b>Modo de prueba disponible</b><span>Como todavía no hay una balanza física, el agente puede ejecutarse en modo Simulator. Esto prueba el envío de peso sin afirmar que el puerto COM funciona.</span></aside>
+  <section class="scale-summary"><article><span>Activas</span><strong>@Equipos.Count(x => x.Activa)</strong></article><article><span>Conectadas ahora</span><strong>@Equipos.Count(IsOnline)</strong></article><article><span>Históricas</span><strong>@Equipos.Count(x => !x.Activa)</strong></article></section>
+  @if (IsLoading) { <div class="state">Consultando equipos…</div> }
+  else if (Error is not null) { <div class="state error">@Error</div> }
+  else if (Equipos.Count == 0) { <div class="empty"><span>⚖</span><h2>Todavía no hay balanzas</h2><p>Registrá el equipo y guardá la clave del agente.</p><button @onclick="NewScale">Registrar primera balanza</button></div> }
+  else { <section class="scale-list">@foreach (var scale in Equipos.OrderByDescending(x => x.Activa).ThenBy(x => x.Caja)) { var online = IsOnline(scale); <article class="scale-card @(!scale.Activa ? "inactive" : null)"><div class="scale-icon">⚖</div><div class="scale-copy"><h2>@scale.Marca @scale.Modelo</h2><span>@(scale.Caja ?? $"Caja {scale.CajaId}") · @scale.PuertoCom · @scale.BaudRate baud</span><small>Serie: @(scale.NumeroSerie ?? "sin informar") · @scale.DataBits bits, @scale.Paridad, @scale.StopBits</small></div><div class="status"><em class="@(online ? "online" : !scale.Activa ? "inactive" : "")">@(!scale.Activa ? "INACTIVA" : online ? "CONECTADA" : "SIN CONEXIÓN")</em><small>@ConnectionText(scale)</small></div><button @onclick="() => Edit(scale)">Editar</button><button class="key" disabled="@(!scale.Activa)" title="@(scale.Activa ? "Generar una nueva clave" : "Activá la balanza antes de vincular un agente")" @onclick="() => Regenerate(scale)">Nueva clave</button></article> }</section> }
+ </main>
+ @if (ShowDialog) { <div class="backdrop" @onclick="Close"><section class="dialog" @onclick:stopPropagation><button class="x" @onclick="Close">×</button><p>@(EditingId.HasValue ? "EDITAR EQUIPO" : "NUEVA BALANZA")</p><h2>Configuración del agente</h2><div class="grid"><label>Caja<select @bind="CajaId"><option value="0">Seleccionar…</option>@foreach(var caja in Cajas){<option value="@caja.Id">@caja.Nombre</option>}</select></label><label>Marca<input @bind="Marca" /></label><label>Modelo<input @bind="Modelo" /></label><label>Puerto COM<input @bind="Puerto" /></label><label>Velocidad<select @bind="BaudRate"><option>9600</option><option>4800</option><option>19200</option><option>115200</option></select></label><label>Número de serie<input @bind="Serie" /></label></div><label class="check"><input type="checkbox" @bind="Activa" /> Balanza activa</label>@if(DialogError is not null){<div class="dialog-error">@DialogError</div>}<button class="save" disabled="@IsSaving" @onclick="Save">@(IsSaving ? "Guardando…" : "Guardar balanza")</button></section></div> }
+ @if (ApiKey is not null) { <div class="backdrop"><section class="dialog key-dialog"><p>VINCULAR AGENTE</p><h2>Copiá el código</h2><div class="warning">Abrí el Configurador del agente en la PC de esta caja y pegá este código en el campo <b>Clave de vinculación</b>.</div><code>@ApiKey</code><button class="copy" @onclick="CopyKey">@(KeyCopied ? "✓ Código copiado" : "Copiar código de vinculación")</button><div class="setup-steps"><b>En la PC de la caja:</b><span>1. Abrí “Configurador Balanza August”.</span><span>2. Pegá el código y elegí el puerto COM.</span><span>3. Presioná Probar y guardar.</span></div><button class="save" @onclick="CloseKey">Listo</button></section></div> }
+</div>
+
+@code {
+ private List<ScaleAdmin> Equipos { get; }=[]; private List<CashRegisterSummary> Cajas { get; }=[];
+ private bool IsLoading,ShowDialog,IsSaving,Activa=true,KeyCopied; private string? Error,DialogError,ApiKey,Serie; private int? EditingId,ApiKeyScaleId; private int CajaId,BaudRate=9600; private string Marca="Systel",Modelo="Croma",Puerto="COM1";
+ protected override Task OnInitializedAsync()=>Load();
+ private async Task Load(){IsLoading=true;Error=null;try{Equipos.Clear();Cajas.Clear();var scales=ScalesService.GetAllAsync();var cajas=CashRegistersService.GetActiveAsync();Equipos.AddRange(await scales);Cajas.AddRange(await cajas);}catch(Exception ex) when(ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException){Error=ex.Message;}finally{IsLoading=false;}}
+ private void GoBack()=>Navigation.NavigateTo("/");
+ private void NewScale(){EditingId=null;CajaId=0;Marca="Systel";Modelo="Croma";Puerto="COM1";BaudRate=9600;Serie=null;Activa=true;DialogError=null;ShowDialog=true;}
+ private void Edit(ScaleAdmin s){EditingId=s.Id;CajaId=s.CajaId;Marca=s.Marca;Modelo=s.Modelo;Puerto=s.PuertoCom;BaudRate=s.BaudRate;Serie=s.NumeroSerie;Activa=s.Activa;DialogError=null;ShowDialog=true;}
+ private void Close(){if(!IsSaving)ShowDialog=false;}
+ private async Task Save(){if(CajaId<1||string.IsNullOrWhiteSpace(Marca)||string.IsNullOrWhiteSpace(Modelo)||string.IsNullOrWhiteSpace(Puerto)){DialogError="Completá caja, marca, modelo y puerto.";return;}IsSaving=true;DialogError=null;try{var input=new ScaleInput(CajaId,Marca.Trim(),Modelo.Trim(),Puerto.Trim(),BaudRate,8,"None","One",string.IsNullOrWhiteSpace(Serie)?null:Serie.Trim(),Activa);if(EditingId.HasValue)await ScalesService.UpdateAsync(EditingId.Value,input);else{var created=await ScalesService.CreateAsync(input);ApiKey=created.ApiKey;ApiKeyScaleId=created.Balanza.Id;KeyCopied=false;}ShowDialog=false;await Load();}catch(Exception ex)when(ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException){DialogError=ex.Message;}finally{IsSaving=false;}}
+ private async Task Regenerate(ScaleAdmin s){try{var result=await ScalesService.RegenerateKeyAsync(s.Id);ApiKey=result.ApiKey;ApiKeyScaleId=s.Id;KeyCopied=false;}catch(Exception ex){Error=ex.Message;}}
+ private async Task CopyKey(){if(ApiKey is null)return;await JS.InvokeVoidAsync("navigator.clipboard.writeText",ApiKey);KeyCopied=true;}
+ private void CloseKey(){ApiKey=null;ApiKeyScaleId=null;KeyCopied=false;}
+ private static bool IsOnline(ScaleAdmin s)=>s.Activa&&s.UltimaConexion is not null&&s.UltimaConexion.Value.ToUniversalTime()>DateTime.UtcNow.AddSeconds(-90);
+ private static string ConnectionText(ScaleAdmin s)=>s.UltimaConexion is null?"Nunca se conectó":$"Último contacto: {s.UltimaConexion.Value.ToLocalTime():dd/MM HH:mm:ss}";
+}

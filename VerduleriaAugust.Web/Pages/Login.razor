@@ -1,0 +1,109 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@inject AuthService Auth
+@inject NavigationManager Navigation
+
+<PageTitle>Ingresar · Augustu</PageTitle>
+
+<div class="login-page">
+    <section class="login-brand-panel">
+        <div class="login-brand"><img src="augustu-logo.jpeg" alt="Augustu" /><strong>Augustu</strong></div>
+        <div class="brand-message">
+            <p>SIMPLE. FRESCO. CONECTADO.</p>
+            <h1>Todo tu negocio,<br />en un solo lugar.</h1>
+            <span>Ventas, stock y cajas trabajando en conjunto.</span>
+        </div>
+        <div class="brand-feature"><b>✓</b><span><strong>Sistema centralizado</strong>Información actualizada en todas las cajas</span></div>
+    </section>
+
+    <section class="login-form-panel">
+        <EditForm Model="Model" OnValidSubmit="SubmitAsync" FormName="login">
+            <DataAnnotationsValidator />
+            <div class="login-heading">
+                <p>ACCESO AL SISTEMA</p>
+                <h2>Bienvenido de nuevo</h2>
+                <span>Ingresá tus datos para comenzar el turno.</span>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+            {
+                <div class="login-error" role="alert">@ErrorMessage</div>
+            }
+
+            <label>
+                <span>Usuario</span>
+                <InputText @bind-Value="Model.UserName" autocomplete="username" placeholder="Ej. caja1" />
+                <ValidationMessage For="() => Model.UserName" />
+            </label>
+            <label>
+                <span>Contraseña</span>
+                <span class="password-field">
+                    <InputText @bind-Value="Model.Password"
+                               type="@(ShowPassword ? "text" : "password")"
+                               autocomplete="current-password"
+                               placeholder="Ingresá tu contraseña" />
+                    <button class="password-toggle"
+                            type="button"
+                            title="@(ShowPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
+                            aria-label="@(ShowPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
+                            @onclick="TogglePassword">
+                        @(ShowPassword ? "Ocultar" : "Ver")
+                    </button>
+                </span>
+                <ValidationMessage For="() => Model.Password" />
+            </label>
+
+            <button class="login-button" type="submit" disabled="@IsLoading">
+                @if (IsLoading) { <span>Ingresando…</span> }
+                else { <span>Ingresar al sistema</span><b>→</b> }
+            </button>
+            <p class="secure-copy">🔒 Conexión segura con la API central</p>
+        </EditForm>
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+    private LoginModel Model { get; } = new();
+    private bool IsLoading { get; set; }
+    private bool ShowPassword { get; set; }
+    private string? ErrorMessage { get; set; }
+
+    private void TogglePassword() => ShowPassword = !ShowPassword;
+
+    private async Task SubmitAsync()
+    {
+        IsLoading = true;
+        ErrorMessage = null;
+        try
+        {
+            var result = await Auth.LoginAsync(Model.UserName, Model.Password);
+            if (result.Success)
+                Navigation.NavigateTo(result.MustChangePassword ? "/cambiar-password" : SafeReturnUrl());
+            else
+                ErrorMessage = result.ErrorMessage;
+        }
+        catch (HttpRequestException)
+        {
+            ErrorMessage = "No se pudo conectar con la API. Verificá que esté iniciada.";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private string SafeReturnUrl() =>
+        !string.IsNullOrWhiteSpace(ReturnUrl) && ReturnUrl.StartsWith('/') && !ReturnUrl.StartsWith("//")
+            ? ReturnUrl
+            : "/";
+
+    private sealed class LoginModel
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Ingresá el usuario.")]
+        public string UserName { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Ingresá la contraseña.")]
+        public string Password { get; set; } = string.Empty;
+    }
+}

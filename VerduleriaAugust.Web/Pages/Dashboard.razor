@@ -1,0 +1,114 @@
+@page "/"
+@attribute [Authorize]
+@inject AuthService Auth
+@inject NavigationManager Navigation
+
+<PageTitle>Inicio · Augustu</PageTitle>
+
+<div class="dashboard-page">
+    <header class="dashboard-topbar">
+        <a class="brand" href="/">
+            <img class="brand-mark" src="augustu-logo.jpeg" alt="Augustu" />
+            <span><strong>Augustu</strong><small>Frutas y verduras · Panel de gestión</small></span>
+        </a>
+        <AuthorizeView Context="authContext">
+            <Authorized>
+                <div class="user-area">
+                    <span class="avatar">@Initials(authContext.User.Identity?.Name)</span>
+                    <span><strong>@authContext.User.Identity?.Name</strong><small>@Role(authContext.User)</small></span>
+                    <button type="button" @onclick="GoToProfile">Mi perfil</button>
+                    <button type="button" @onclick="LogoutAsync">Cerrar sesión</button>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+    </header>
+
+    <main>
+        <section class="welcome">
+            <div>
+                <p class="eyebrow">PANEL PRINCIPAL</p>
+                <h1>¿Qué vamos a gestionar hoy?</h1>
+                <span>Accedé rápidamente a cada área del negocio.</span>
+            </div>
+            <div class="system-state"><i></i><span><strong>Sistema conectado</strong>API central disponible</span></div>
+        </section>
+
+        <section class="quick-section">
+            <h2>Acceso rápido</h2>
+            <div class="module-grid">
+                <a class="module-card primary" href="/ventas/nueva">
+                    <span class="module-icon">🛒</span>
+                    <span class="module-copy"><strong>Nueva venta</strong><small>Abrir el punto de venta y comenzar un pedido</small></span>
+                    <b>Ingresar →</b>
+                </a>
+                <a class="module-card" href="/ventas">
+                    <span class="module-icon">🧾</span>
+                    <span class="module-copy"><strong>Ventas</strong><small>Historial, pagos y anulaciones</small></span>
+                    <b>Ver historial →</b>
+                </a>
+                <a class="module-card" href="/cajas">
+                    <span class="module-icon">💵</span>
+                    <span class="module-copy"><strong>Cajas</strong><small>Aperturas, cierres y arqueos</small></span>
+                    <b>Gestionar →</b>
+                </a>
+                <AuthorizeView Roles="Administrador,Encargado">
+                    <Authorized>
+                        <a class="module-card" href="/stock">
+                            <span class="module-icon">📊</span>
+                            <span class="module-copy"><strong>Stock</strong><small>Existencias y movimientos de mercadería</small></span>
+                            <b>Consultar →</b>
+                        </a>
+                        <a class="module-card" href="/mercaderia"><span class="module-icon">🚚</span><span class="module-copy"><strong>Mercadería</strong><small>Proveedores, recepciones y costos</small></span><b>Ingresar →</b></a>
+                        <a class="module-card" href="/productos">
+                            <span class="module-icon">📦</span>
+                            <span class="module-copy"><strong>Productos</strong><small>Productos, categorías y precios</small></span>
+                            <b>Administrar →</b>
+                        </a>
+                        <a class="module-card" href="/estadisticas">
+                            <span class="module-icon">📈</span>
+                            <span class="module-copy"><strong>Estadísticas</strong><small>Facturación y productos vendidos</small></span>
+                            <b>Ver dashboard →</b>
+                        </a>
+                        <a class="module-card" href="/formas-pago">
+                            <span class="module-icon">💳</span>
+                            <span class="module-copy"><strong>Formas de pago</strong><small>Activación y orden en la pantalla de cobro</small></span>
+                            <b>Configurar →</b>
+                        </a>
+                        <a class="module-card" href="/balanzas">
+                            <span class="module-icon">⚖️</span>
+                            <span class="module-copy"><strong>Balanzas</strong><small>Equipos y agentes de lectura</small></span>
+                            <b>Configurar →</b>
+                        </a>
+                    </Authorized>
+                </AuthorizeView>
+                <AuthorizeView Roles="Administrador">
+                    <Authorized>
+                        <a class="module-card" href="/usuarios"><span class="module-icon">👥</span><span class="module-copy"><strong>Usuarios</strong><small>Usuarios, permisos y roles</small></span><b>Administrar →</b></a>
+                        <button class="module-card" type="button" disabled title="Este módulo se conectará en la siguiente etapa">
+                            <span class="module-icon">⚙️</span>
+                            <span class="module-copy"><strong>Configuración</strong><small>Preferencias generales del sistema</small></span>
+                            <em>Próximamente</em>
+                        </button>
+                    </Authorized>
+                </AuthorizeView>
+            </div>
+        </section>
+    </main>
+</div>
+
+@code {
+    private async Task LogoutAsync()
+    {
+        await Auth.LogoutAsync();
+        Navigation.NavigateTo("/login");
+    }
+
+    private void GoToProfile() => Navigation.NavigateTo("/perfil");
+
+    private static string Initials(string? name) =>
+        string.IsNullOrWhiteSpace(name) ? "?" : name[..Math.Min(2, name.Length)].ToUpperInvariant();
+
+    private static string Role(System.Security.Claims.ClaimsPrincipal user) =>
+        user.Claims.FirstOrDefault(claim => claim.Type == "role" || claim.Type.EndsWith("/role"))?.Value ?? "Usuario";
+
+}

@@ -6,6 +6,8 @@ public class MovimientoStock
 
     public int ProductoId { get; set; }
 
+    public int? UsuarioId { get; set; }
+
     public string TipoMovimiento { get; set; } = string.Empty; // Entrada, Salida, Ajuste
 
     public decimal Cantidad { get; set; }
@@ -19,4 +21,6 @@ public class MovimientoStock
     public DateTime FechaMovimiento { get; set; }
 
     public Producto? Producto { get; set; }
+
+    public Usuario? Usuario { get; set; }
 }

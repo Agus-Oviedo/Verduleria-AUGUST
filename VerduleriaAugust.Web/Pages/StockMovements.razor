@@ -1,0 +1,27 @@
+@page "/stock/movimientos"
+@attribute [Authorize(Roles = "Administrador,Encargado")]
+@inject StockService StockService
+@inject NavigationManager Navigation
+
+<PageTitle>Movimientos de stock · Augustu</PageTitle>
+
+<div class="movements-page">
+    <header><button class="back" @onclick="GoToDashboard">← Panel principal</button><div><strong>Augustu</strong><span>Auditoría de inventario</span></div><button class="stock" @onclick="GoToStock">Ver stock actual</button></header>
+    <main>
+        <section class="heading"><div><p>INVENTARIO</p><h1>Movimientos de stock</h1><span>Entradas, salidas y ajustes registrados por el sistema.</span></div><strong>@Total movimiento(s)</strong></section>
+        <section class="filters"><input @bind="Search" @bind:event="oninput" placeholder="Buscar producto o código…" @onkeydown="SearchKeyDown" /><select @bind="Type"><option value="">Todos los movimientos</option><option value="Entrada">Entradas</option><option value="Salida">Salidas</option><option value="Ajuste">Ajustes</option></select><button @onclick="ApplyFilters">Buscar</button></section>
+        <section class="table-card">
+            @if(IsLoading){<div class="message">Cargando movimientos…</div>}
+            else if(!string.IsNullOrWhiteSpace(Error)){<div class="message error">@Error</div>}
+            else if(Items.Count==0){<div class="message">No hay movimientos para mostrar.</div>}
+            else{<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th>Cantidad</th><th>Stock anterior</th><th>Stock nuevo</th><th>Motivo / usuario</th></tr></thead><tbody>@foreach(var item in Items){<tr><td>@item.FechaMovimiento.ToString("dd/MM/yyyy HH:mm")</td><td><strong>@item.Producto</strong><small>@item.Codigo</small></td><td><span class="movement @item.TipoMovimiento.ToLowerInvariant()">@item.TipoMovimiento</span></td><td class="amount">@(item.TipoMovimiento=="Salida"?"−":"+")@item.Cantidad.ToString("N3")</td><td>@item.StockAnterior.ToString("N3")</td><td><strong>@item.StockNuevo.ToString("N3")</strong></td><td><span>@(item.Motivo??"Sin motivo")</span><small>@(item.Usuario??"Sistema")</small></td></tr>}</tbody></table></div>}
+        </section>
+        @if(TotalPages>1){<nav><button disabled="@(Page==1)" @onclick="Previous">← Anterior</button><span>Página @Page de @TotalPages</span><button disabled="@(Page>=TotalPages)" @onclick="Next">Siguiente →</button></nav>}
+    </main>
+</div>
+
+@code{
+    private List<StockMovement> Items{get;}=[];private string Search{get;set;}="";private string Type{get;set;}="";private int Page{get;set;}=1;private int Total{get;set;}private int TotalPages{get;set;}private bool IsLoading{get;set;}private string? Error{get;set;}
+    protected override Task OnInitializedAsync()=>LoadAsync();private async Task LoadAsync(){IsLoading=true;Error=null;try{var result=await StockService.GetMovementsAsync(Page,Search,Type);Items.Clear();Items.AddRange(result.Items);Total=result.Total;TotalPages=result.TotalPaginas;}catch(Exception ex)when(ex is HttpRequestException or UnauthorizedAccessException){Error=ex.Message;}finally{IsLoading=false;}}
+    private async Task ApplyFilters(){Page=1;await LoadAsync();}private async Task SearchKeyDown(KeyboardEventArgs e){if(e.Key=="Enter")await ApplyFilters();}private async Task Previous(){if(Page>1){Page--;await LoadAsync();}}private async Task Next(){if(Page<TotalPages){Page++;await LoadAsync();}}private void GoToDashboard()=>Navigation.NavigateTo("/");private void GoToStock()=>Navigation.NavigateTo("/stock");
+}

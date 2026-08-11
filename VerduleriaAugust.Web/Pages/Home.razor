@@ -1,0 +1,573 @@
+@page "/ventas/nueva"
+@attribute [Authorize]
+@implements IDisposable
+@inject AuthService Auth
+@inject ProductsService ProductsService
+@inject CashRegistersService CashRegistersService
+@inject SalesService SalesService
+@inject ScalesService ScalesService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Caja · Augustu</PageTitle>
+
+<div class="pos-page">
+    <header class="topbar">
+        <div class="brand">
+            <button class="brand-mark" type="button" title="Volver al panel principal" @onclick="GoToDashboard"><img src="augustu-logo.jpeg" alt="Augustu" /></button>
+            <div>
+                <strong>Augustu</strong>
+                <button class="dashboard-link" type="button" @onclick="GoToDashboard">← Panel principal</button>
+            </div>
+        </div>
+
+        <div class="register-state @(SelectedRegister?.SesionAbierta is null ? "closed" : null)">
+            <span class="status-dot"></span>
+            @if (IsLoadingRegisters)
+            {
+                <div><strong>Cargando cajas…</strong><span>Consultando la API</span></div>
+            }
+            else if (Registers.Count == 0)
+            {
+                <div><strong>Sin cajas activas</strong><span>Configurá una caja para vender</span></div>
+            }
+            else
+            {
+                <select value="@SelectedRegisterId" @onchange="SelectRegister">
+                    @foreach (var register in Registers)
+                    {
+                        <option value="@register.Id">@register.Nombre</option>
+                    }
+                </select>
+                <div><strong>@(SelectedRegister?.SesionAbierta is null ? "Caja cerrada" : "Turno abierto")</strong><span>@RegisterStatus</span></div>
+            }
+        </div>
+
+        <AuthorizeView Context="authContext">
+            <Authorized>
+                <div class="operator">
+                    <div class="operator-avatar">@Initials(authContext.User.Identity?.Name)</div>
+                    <div><strong>@authContext.User.Identity?.Name</strong><span>@Role(authContext.User)</span></div>
+                    <button class="icon-button" title="Mi perfil" @onclick="GoToProfile">⚙</button>
+                    <button class="icon-button" title="Cerrar sesión" @onclick="LogoutAsync">↪</button>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+    </header>
+
+    @if (SelectedRegister is not null && SelectedRegister.SesionAbierta is null)
+    {
+        <section class="open-register-banner">
+            <div><strong>@SelectedRegister.Nombre todavía está cerrada</strong><span>Ingresá el efectivo inicial para comenzar a registrar ventas.</span></div>
+            <label>Saldo inicial $ <input type="number" min="0" step="0.01" @bind="OpeningBalance" /></label>
+            <button type="button" disabled="@IsOpeningRegister" @onclick="OpenRegisterAsync">@(IsOpeningRegister ? "Abriendo…" : "Abrir caja")</button>
+            @if (!string.IsNullOrWhiteSpace(RegisterError)) { <span class="register-error">@RegisterError</span> }
+        </section>
+    }
+    @if (!string.IsNullOrWhiteSpace(SaleSuccess))
+    {
+        <div class="sale-notice"><strong>✓ Venta registrada</strong><span>@SaleSuccess</span><button @onclick="() => SaleSuccess = null">×</button></div>
+    }
+
+    <div class="workspace">
+        <section class="catalog-panel">
+            <button type="button" class="visible-back-button" @onclick="GoToDashboard">← Volver al panel</button>
+            <div class="catalog-heading">
+                <div>
+                    <p class="eyebrow">NUEVA VENTA</p>
+                    <h1>¿Qué llevamos hoy?</h1>
+                </div>
+                <div class="clock">05 AGO <strong>08:47</strong></div>
+            </div>
+
+            <label class="search-box">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" /></svg>
+                <input @bind="Search" @bind:event="oninput" placeholder="Buscar producto o código..." />
+                <kbd>F2</kbd>
+            </label>
+
+            <nav class="category-tabs" aria-label="Categorías">
+                @foreach (var category in Categories)
+                {
+                    <button class="@(SelectedCategory == category ? "active" : null)"
+                            @onclick="() => SelectedCategory = category">@category</button>
+                }
+            </nav>
+
+            <div class="product-grid">
+                @if (IsLoadingProducts)
+                {
+                    <div class="catalog-message"><span class="catalog-spinner"></span><strong>Cargando productos…</strong></div>
+                }
+                else if (!string.IsNullOrWhiteSpace(ProductsError))
+                {
+                    <div class="catalog-message error"><strong>No pudimos cargar el catálogo</strong><span>@ProductsError</span><button @onclick="LoadProductsAsync">Reintentar</button></div>
+                }
+                else if (!FilteredProducts.Any())
+                {
+                    <div class="catalog-message"><strong>No hay productos para mostrar</strong><span>Probá otra búsqueda o categoría.</span></div>
+                }
+                else foreach (var product in FilteredProducts)
+                {
+                    <button class="product-card" @onclick="() => Add(product)">
+                        <span class="product-visual @product.ColorClass">@product.Symbol</span>
+                        <span class="product-name">@product.Name</span>
+                        <span class="product-meta">@product.Category</span>
+                        <span class="product-footer">
+                            <strong>$ @product.Price.ToString("N0")</strong>
+                            <small>/ @product.Unit</small>
+                            <span class="add-button">+</span>
+                        </span>
+                    </button>
+                }
+            </div>
+        </section>
+
+        <aside class="sale-panel">
+            <div class="sale-header">
+                <div><p class="eyebrow">VENTA ACTUAL</p><h2>Nueva venta</h2><small>El número se asigna al confirmar el cobro</small></div>
+                <button class="clear-button" @onclick="ClearCart" disabled="@(Cart.Count == 0)">Vaciar</button>
+            </div>
+
+            <div class="scale-card @(CurrentReading is null ? "disconnected" : null)">
+                <div class="scale-icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l1.5 12h-17L5 8Zm3 0a4 4 0 0 1 8 0m-6 5h4" /></svg>
+                </div>
+                <div class="scale-copy"><span>@(CurrentReading is null ? "Balanza sin lectura" : "Balanza conectada")</span><strong>@(CurrentReading is null ? "Podés continuar en modo manual" : $"Caja {CurrentReading.CajaId} · {ReadingAgeText}")</strong></div>
+                <div class="weight"><strong>@(CurrentReading is null ? "—" : CurrentReading.PesoKg.ToString("0.000"))</strong><span>kg</span><small>@(CurrentReading is null ? "SIN LECTURA" : CurrentReading.Estable ? "ESTABLE" : "INESTABLE")</small></div>
+            </div>
+
+            <div class="cart-list">
+                @if (Cart.Count == 0)
+                {
+                    <div class="empty-cart">
+                        <div>🧺</div>
+                        <strong>La venta está vacía</strong>
+                        <span>Elegí un producto para comenzar.</span>
+                    </div>
+                }
+                @foreach (var line in Cart)
+                {
+                    <article class="cart-line">
+                        <span class="line-symbol @line.Product.ColorClass">@line.Product.Symbol</span>
+                        <div class="line-main">
+                            <strong>@line.Product.Name</strong>
+                            <span>@line.Quantity.ToString("0.###") @line.Product.Unit × $ @line.Product.Price.ToString("N0")</span>
+                            @if (line.Product.Unit == "kg") { <small class="weight-source @(line.ScaleReadingId.HasValue ? "automatic" : null)">@(line.ScaleReadingId.HasValue ? "⚖ Peso tomado de la balanza" : "✎ Peso manual")</small> }
+                            <div class="quantity-control">
+                                <button @onclick="() => Decrease(line)">−</button>
+                                <b>@line.Quantity.ToString("0.###")</b>
+                                <button @onclick="() => Increase(line)">+</button>
+                            </div>
+                        </div>
+                        <div class="line-total">
+                            <button class="remove-line" @onclick="() => Remove(line)">×</button>
+                            <strong>$ @line.Total.ToString("N0")</strong>
+                        </div>
+                    </article>
+                }
+            </div>
+
+            <div class="summary">
+                <div><span>Subtotal</span><strong>$ @Subtotal.ToString("N0")</strong></div>
+                <div><span>Descuento</span><AuthorizeView Roles="Administrador,Encargado"><Authorized><button @onclick="ToggleDiscountEditor">@(Discount > 0 ? $"$ {Discount:N0}" : "Agregar")</button></Authorized><NotAuthorized><strong>$ 0</strong></NotAuthorized></AuthorizeView></div>
+                @if (ShowDiscountEditor)
+                {
+                    <AuthorizeView Roles="Administrador,Encargado"><Authorized><div class="discount-editor"><label>Importe<input type="number" min="0" max="@Subtotal" step="0.01" @bind="Discount" /></label><label>Motivo<input maxlength="300" placeholder="Motivo del descuento" @bind="DiscountReason" /></label><small class="@(DiscountIsValid ? "" : "invalid")">Solo administrador o encargado. El importe debe ser menor al subtotal y el motivo tener al menos 5 caracteres.</small></div></Authorized></AuthorizeView>
+                }
+                <div class="grand-total"><span>Total</span><strong>$ @TotalToPay.ToString("N0")</strong></div>
+                <button class="checkout" disabled="@(Cart.Count == 0 || SelectedRegister?.SesionAbierta is null || PaymentMethods.Count == 0 || !DiscountIsValid)" @onclick="BeginCheckout">
+                    <span>Cobrar</span><strong>$ @TotalToPay.ToString("N0")</strong><kbd>F10</kbd>
+                </button>
+                <p class="checkout-hint"><span>✓</span> Stock y precios se validarán al confirmar</p>
+            </div>
+        </aside>
+    </div>
+    @if (ShowCheckout)
+    {
+        <div class="checkout-backdrop" @onclick="CloseCheckout">
+            <section class="checkout-dialog" @onclick:stopPropagation>
+                <button class="dialog-close" type="button" @onclick="CloseCheckout">×</button>
+                <p class="eyebrow">CONFIRMAR COBRO</p><h2>Total a cobrar</h2>
+                <strong class="dialog-total">$ @TotalToPay.ToString("N2")</strong>
+                @if (Discount > 0) { <div class="checkout-discount"><span>Descuento autorizado</span><strong>- $ @Discount.ToString("N2")</strong><small>@DiscountReason</small></div> }
+                <div class="payment-label">Formas de pago <small>Indicá cuánto del total se paga con cada medio.</small></div>
+                <div class="payment-lines">
+                    @foreach (var payment in CheckoutPayments)
+                    {
+                        <div class="payment-line" @key="payment">
+                            <select @bind="payment.PaymentMethodId">
+                                @foreach (var method in PaymentMethods) { <option value="@method.Id">@method.Nombre</option> }
+                            </select>
+                            <div class="payment-amount"><span>$</span><input type="number" min="0.01" step="0.01" @bind="payment.Amount" /></div>
+                            <button type="button" class="fill-payment" title="Completar saldo restante" @onclick="() => FillRemaining(payment)">Saldo</button>
+                            @if (CheckoutPayments.Count > 1) { <button type="button" class="remove-payment" title="Quitar pago" @onclick="() => RemovePayment(payment)">×</button> }
+                        </div>
+                    }
+                </div>
+                @if (CheckoutPayments.Count < PaymentMethods.Count) { <button type="button" class="add-payment" @onclick="AddPayment">+ Agregar otra forma de pago</button> }
+                <div class="payment-balance @(PaymentDifference == 0 ? "balanced" : "pending")"><span>Total ingresado</span><strong>$ @PaymentTotal.ToString("N2")</strong><span>@(PaymentDifference >= 0 ? "Falta" : "Sobra")</span><strong>$ @Math.Abs(PaymentDifference).ToString("N2")</strong></div>
+                @if (HasCashPayment)
+                {
+                    <div class="cash-received">
+                        <label>Efectivo recibido<div><span>$</span><input type="number" min="0" step="0.01" @bind="CashReceived" /></div></label>
+                        <p class="@(CashReceivedIsValid ? "valid" : "invalid")"><span>Vuelto</span><strong>$ @CashChange.ToString("N2")</strong><small>Debe cubrir los $ @CashPaymentTotal.ToString("N2") pagados en efectivo</small></p>
+                    </div>
+                }
+                @if (HasRepeatedPaymentMethods) { <div class="sale-error">No repitas la misma forma de pago.</div> }
+                <div class="dialog-summary"><span>@Cart.Count producto(s)</span><span>@SelectedRegister?.Nombre</span></div>
+                @if (!string.IsNullOrWhiteSpace(SaleError)) { <div class="sale-error">@SaleError</div> }
+                <button class="confirm-sale" disabled="@(IsSubmittingSale || !PaymentsAreValid)" @onclick="SubmitSaleAsync">@CheckoutButtonText</button>
+                <small>La API validará nuevamente precios y stock.</small>
+            </section>
+        </div>
+    }
+    @if (Receipt is not null)
+    {
+        <div class="receipt-backdrop">
+            <section class="receipt" id="sale-receipt">
+                <header><img src="augustu-logo.jpeg" alt="Augustu" /><div><h2>AUGUSTU</h2><span>FRUTAS Y VERDURAS</span></div></header>
+                <div class="receipt-meta"><strong>@Receipt.NumeroVenta</strong><span>@Receipt.FechaVenta.ToString("dd/MM/yyyy HH:mm")</span><span>@Receipt.Caja</span></div>
+                <div class="receipt-lines">
+                    @foreach (var detail in Receipt.Detalles)
+                    {
+                        <article><div><strong>@detail.Producto</strong><span>@detail.Cantidad.ToString("0.###") @(detail.TipoVenta == "Peso" ? "kg" : "un") × $ @detail.PrecioUnitario.ToString("N2")</span></div><b>$ @detail.TotalLinea.ToString("N2")</b></article>
+                    }
+                </div>
+                <div class="receipt-totals"><span>Subtotal <b>$ @Receipt.Subtotal.ToString("N2")</b></span><span>Descuento <b>$ @Receipt.Descuento.ToString("N2")</b></span><strong>Total <b>$ @Receipt.Total.ToString("N2")</b></strong></div>
+                <div class="receipt-payments">@foreach (var payment in Receipt.Pagos) { <span>@payment.FormaPago <b>$ @payment.Importe.ToString("N2")</b></span> }</div>
+                @if (ReceiptCashReceived is not null) { <div class="receipt-cash"><span>Efectivo recibido <b>$ @ReceiptCashReceived.Value.ToString("N2")</b></span><strong>Vuelto <b>$ @ReceiptChange.ToString("N2")</b></strong></div> }
+                <footer><span>Gracias por elegir Augustu</span><small>Comprobante interno no fiscal</small></footer>
+                <div class="receipt-actions"><button class="secondary" @onclick="PrintReceipt">Imprimir</button><button @onclick="CloseReceipt">Nueva venta</button></div>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private string Search { get; set; } = string.Empty;
+    private string SelectedCategory { get; set; } = "Todos";
+    private List<CartLine> Cart { get; } = [];
+    private List<CashRegisterSummary> Registers { get; } = [];
+    private List<PaymentMethod> PaymentMethods { get; } = [];
+    private List<ProductItem> Products { get; } = [];
+    private bool IsLoadingProducts { get; set; }
+    private string? ProductsError { get; set; }
+    private bool IsLoadingRegisters { get; set; }
+    private bool IsOpeningRegister { get; set; }
+    private int? SelectedRegisterId { get; set; }
+    private decimal OpeningBalance { get; set; }
+    private string? RegisterError { get; set; }
+    private List<CheckoutPayment> CheckoutPayments { get; } = [];
+    private bool ShowCheckout { get; set; }
+    private bool IsSubmittingSale { get; set; }
+    private string? PendingSaleKey { get; set; }
+    private string? SaleError { get; set; }
+    private string? SaleSuccess { get; set; }
+    private SaleDetail? Receipt { get; set; }
+    private decimal CashReceived { get; set; }
+    private decimal? ReceiptCashReceived { get; set; }
+    private decimal ReceiptChange { get; set; }
+    private decimal Discount { get; set; }
+    private string DiscountReason { get; set; } = "";
+    private bool ShowDiscountEditor { get; set; }
+    private CurrentScaleReading? CurrentReading { get; set; }
+    private CancellationTokenSource? ScalePollingCancellation { get; set; }
+    private IEnumerable<string> Categories => new[] { "Todos" }.Concat(Products.Select(p => p.Category).Distinct().OrderBy(x => x));
+    private CashRegisterSummary? SelectedRegister => Registers.FirstOrDefault(register => register.Id == SelectedRegisterId);
+    private decimal PaymentTotal => Math.Round(CheckoutPayments.Sum(payment => payment.Amount), 2, MidpointRounding.AwayFromZero);
+    private decimal PaymentDifference => Math.Round(TotalToPay - PaymentTotal, 2, MidpointRounding.AwayFromZero);
+    private bool HasRepeatedPaymentMethods => CheckoutPayments.Select(payment => payment.PaymentMethodId).Distinct().Count() != CheckoutPayments.Count;
+    private decimal CashPaymentTotal => Math.Round(CheckoutPayments.Where(payment => PaymentMethods.Any(method => method.Id == payment.PaymentMethodId && method.EsEfectivo)).Sum(payment => payment.Amount), 2, MidpointRounding.AwayFromZero);
+    private bool HasCashPayment => CashPaymentTotal > 0;
+    private decimal CashChange => Math.Max(Math.Round(CashReceived - CashPaymentTotal, 2, MidpointRounding.AwayFromZero), 0);
+    private bool CashReceivedIsValid => !HasCashPayment || CashReceived >= CashPaymentTotal;
+    private bool DiscountIsValid => Discount >= 0 && Discount < Subtotal && (Discount == 0 || DiscountReason.Trim().Length is >= 5 and <= 300);
+    private bool PaymentsAreValid => DiscountIsValid && CheckoutPayments.Count > 0 && CheckoutPayments.All(payment => payment.PaymentMethodId > 0 && payment.Amount > 0) && !HasRepeatedPaymentMethods && PaymentDifference == 0 && CashReceivedIsValid;
+    private string CheckoutButtonText => IsSubmittingSale
+        ? "Registrando…"
+        : HasRepeatedPaymentMethods
+            ? "No repitas una forma de pago"
+            : PaymentDifference != 0
+                ? "Corregí los importes para continuar"
+                : !CashReceivedIsValid
+                    ? "El efectivo recibido es insuficiente"
+                    : "Confirmar y cobrar";
+    private string RegisterStatus => SelectedRegister?.SesionAbierta is { } session
+        ? $"Desde {session.FechaApertura:HH:mm} · Inicial $ {session.SaldoInicial:N2}"
+        : "Se requiere apertura";
+    private string ReadingAgeText => CurrentReading is null
+        ? "sin lectura"
+        : $"actualizada hace {Math.Max(0, (int)(DateTimeOffset.UtcNow - CurrentReading.FechaRecepcion).TotalSeconds)} s";
+
+    private IEnumerable<ProductItem> FilteredProducts => Products.Where(product =>
+        (SelectedCategory == "Todos" || product.Category == SelectedCategory) &&
+        (string.IsNullOrWhiteSpace(Search) || product.Name.Contains(Search, StringComparison.OrdinalIgnoreCase)));
+
+    private decimal Subtotal => Cart.Sum(line => line.Total);
+    private decimal TotalToPay => Math.Max(Math.Round(Subtotal - Discount, 2, MidpointRounding.AwayFromZero), 0);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(LoadProductsAsync(), LoadRegistersAsync(), LoadPaymentMethodsAsync());
+        ScalePollingCancellation = new CancellationTokenSource();
+        _ = PollScaleAsync(ScalePollingCancellation.Token);
+    }
+
+    private async Task LoadPaymentMethodsAsync()
+    {
+        try
+        {
+            PaymentMethods.AddRange(await SalesService.GetPaymentMethodsAsync());
+        }
+        catch (Exception exception) when (exception is HttpRequestException or UnauthorizedAccessException) { SaleError = exception.Message; }
+    }
+
+    private async Task LoadRegistersAsync()
+    {
+        IsLoadingRegisters = true;
+        RegisterError = null;
+        try
+        {
+            var registers = await CashRegistersService.GetActiveAsync();
+            Registers.Clear();
+            Registers.AddRange(registers);
+            if (SelectedRegisterId is null || Registers.All(register => register.Id != SelectedRegisterId))
+                SelectedRegisterId = Registers.FirstOrDefault(register => register.SesionAbierta is not null)?.Id ?? Registers.FirstOrDefault()?.Id;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or UnauthorizedAccessException)
+        {
+            RegisterError = exception.Message;
+        }
+        finally
+        {
+            IsLoadingRegisters = false;
+        }
+    }
+
+    private void SelectRegister(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var id)) SelectedRegisterId = id;
+        CurrentReading = null;
+        RegisterError = null;
+    }
+
+    private async Task PollScaleAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                var reading = SelectedRegisterId.HasValue
+                    ? await ScalesService.GetCurrentReadingAsync(SelectedRegisterId.Value, cancellationToken)
+                    : null;
+                CurrentReading = reading is { Vigente: true } ? reading : null;
+                await InvokeAsync(StateHasChanged);
+                await timer.WaitForNextTickAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
+            catch (Exception) { CurrentReading = null; await InvokeAsync(StateHasChanged); await Task.Delay(2000, cancellationToken); }
+        }
+    }
+
+    private async Task OpenRegisterAsync()
+    {
+        if (SelectedRegister is null) return;
+        IsOpeningRegister = true;
+        RegisterError = null;
+        try
+        {
+            var opened = await CashRegistersService.OpenAsync(SelectedRegister.Id, OpeningBalance);
+            var index = Registers.FindIndex(register => register.Id == SelectedRegister.Id);
+            Registers[index] = SelectedRegister with
+            {
+                SesionAbierta = new OpenRegisterSession(opened.Id, opened.FechaApertura, opened.SaldoInicial, 0)
+            };
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            RegisterError = exception.Message;
+        }
+        finally
+        {
+            IsOpeningRegister = false;
+        }
+    }
+
+    private async Task LoadProductsAsync()
+    {
+        IsLoadingProducts = true;
+        ProductsError = null;
+        try
+        {
+            var products = await ProductsService.GetActiveAsync();
+            Products.Clear();
+            Products.AddRange(products.Select(ToProductItem));
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            ProductsError = exception.Message;
+        }
+        catch (HttpRequestException)
+        {
+            ProductsError = "La API no está disponible en este momento.";
+        }
+        finally
+        {
+            IsLoadingProducts = false;
+        }
+    }
+
+    private static ProductItem ToProductItem(ProductSummary product)
+    {
+        var byWeight = product.TipoVenta is "Peso" or "Ambos";
+        var price = byWeight ? product.PrecioPorKilo : product.PrecioPorUnidad;
+        return new ProductItem(product.Id, product.Nombre, product.Categoria ?? "Sin categoría",
+            price ?? 0m, byWeight ? "kg" : "un", byWeight ? "Peso" : "Unidad", SymbolFor(product.Nombre), ColorFor(product.Id));
+    }
+
+    private static string SymbolFor(string name) => name.ToLowerInvariant() switch
+    {
+        var value when value.Contains("tomate") => "🍅",
+        var value when value.Contains("banana") => "🍌",
+        var value when value.Contains("papa") => "🥔",
+        var value when value.Contains("manzana") => "🍎",
+        var value when value.Contains("lechuga") => "🥬",
+        var value when value.Contains("huevo") => "🥚",
+        _ => "🥕"
+    };
+
+    private static string ColorFor(int id) => new[] { "coral", "yellow", "sand", "rose", "green", "mint", "orange", "violet" }[Math.Abs(id) % 8];
+
+    private void Add(ProductItem product)
+    {
+        var line = Cart.FirstOrDefault(item => item.Product.Id == product.Id);
+        var scaleQuantity = product.Unit == "kg" && CurrentReading is { Estable: true, PesoKg: > 0 }
+            ? CurrentReading.PesoKg
+            : (decimal?)null;
+        if (line is null)
+            Cart.Add(new CartLine(product, scaleQuantity ?? 1m,
+                scaleQuantity.HasValue ? CurrentReading?.LecturaId : null));
+        else
+        {
+            line.Quantity = scaleQuantity ?? line.Quantity + (product.Unit == "kg" ? .250m : 1m);
+            line.ScaleReadingId = scaleQuantity.HasValue ? CurrentReading?.LecturaId : null;
+        }
+    }
+
+    private static void Increase(CartLine line)
+    {
+        line.Quantity += line.Product.Unit == "kg" ? .250m : 1m;
+        line.ScaleReadingId = null;
+    }
+    private void Decrease(CartLine line)
+    {
+        line.Quantity -= line.Product.Unit == "kg" ? .250m : 1m;
+        line.ScaleReadingId = null;
+        if (line.Quantity <= 0) Cart.Remove(line);
+    }
+    private void Remove(CartLine line) => Cart.Remove(line);
+    private void ClearCart() => Cart.Clear();
+
+    public void Dispose()
+    {
+        ScalePollingCancellation?.Cancel();
+        ScalePollingCancellation?.Dispose();
+    }
+
+    private void BeginCheckout()
+    {
+        if (!DiscountIsValid) { SaleError = "El descuento debe ser menor al subtotal y tener un motivo de al menos 5 caracteres."; return; }
+        PendingSaleKey ??= Guid.NewGuid().ToString("D");
+        SaleError = null;
+        CheckoutPayments.Clear();
+        var defaultMethod = PaymentMethods.FirstOrDefault(method => method.EsEfectivo) ?? PaymentMethods.First();
+        CheckoutPayments.Add(new CheckoutPayment(defaultMethod.Id, TotalToPay));
+        CashReceived = defaultMethod.EsEfectivo ? TotalToPay : 0;
+        ShowCheckout = true;
+    }
+
+    private void CloseCheckout() { if (!IsSubmittingSale) ShowCheckout = false; }
+
+    private void AddPayment()
+    {
+        var method = PaymentMethods.FirstOrDefault(candidate => CheckoutPayments.All(payment => payment.PaymentMethodId != candidate.Id));
+        if (method is not null) CheckoutPayments.Add(new CheckoutPayment(method.Id, Math.Max(PaymentDifference, 0)));
+    }
+
+    private void RemovePayment(CheckoutPayment payment)
+    {
+        CheckoutPayments.Remove(payment);
+        if (CheckoutPayments.Count == 1) CheckoutPayments[0].Amount = TotalToPay;
+    }
+
+    private void FillRemaining(CheckoutPayment payment)
+    {
+        var otherPayments = CheckoutPayments.Where(candidate => !ReferenceEquals(candidate, payment)).Sum(candidate => candidate.Amount);
+        payment.Amount = Math.Max(Math.Round(TotalToPay - otherPayments, 2, MidpointRounding.AwayFromZero), 0);
+    }
+
+    private async Task SubmitSaleAsync()
+    {
+        if (SelectedRegister is null || PendingSaleKey is null) return;
+        if (!PaymentsAreValid) { SaleError = "Los pagos deben ser distintos, mayores a cero y sumar exactamente el total de la venta."; return; }
+        IsSubmittingSale = true; SaleError = null;
+        try
+        {
+            var request = new CreateSaleRequest(PendingSaleKey, SelectedRegister.Id, Discount, Discount > 0 ? DiscountReason.Trim() : null,
+                Cart.Select(x => new CreateSaleItem(
+                    x.Product.Id, x.Product.SaleType, x.Quantity, x.ScaleReadingId)).ToArray(),
+                CheckoutPayments.Select(payment => new CreateSalePayment(payment.PaymentMethodId, payment.Amount)).ToArray());
+            var sale = await SalesService.CreateAsync(request);
+            SaleSuccess = $"{sale.NumeroVenta} · Total $ {sale.Total:N2}";
+            Receipt = await SalesService.GetSaleAsync(sale.Id);
+            ReceiptCashReceived = HasCashPayment ? CashReceived : null;
+            ReceiptChange = HasCashPayment ? CashChange : 0;
+            Cart.Clear(); Discount = 0; DiscountReason = ""; ShowDiscountEditor = false; PendingSaleKey = null; ShowCheckout = false;
+            await LoadProductsAsync();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or UnauthorizedAccessException) { SaleError = exception.Message; }
+        finally { IsSubmittingSale = false; }
+    }
+
+    private Task PrintReceipt() => JS.InvokeVoidAsync("window.print").AsTask();
+    private void CloseReceipt() { Receipt = null; ReceiptCashReceived = null; ReceiptChange = 0; SaleSuccess = null; }
+
+    private async Task LogoutAsync()
+    {
+        await Auth.LogoutAsync();
+        Navigation.NavigateTo("/login");
+    }
+
+    private sealed class CheckoutPayment(int paymentMethodId, decimal amount)
+    {
+        public int PaymentMethodId { get; set; } = paymentMethodId;
+        public decimal Amount { get; set; } = amount;
+    }
+
+    private void ToggleDiscountEditor()
+    {
+        ShowDiscountEditor = !ShowDiscountEditor;
+        if (!ShowDiscountEditor && Discount == 0) DiscountReason = "";
+    }
+
+    private void GoToDashboard() => Navigation.NavigateTo("/");
+    private void GoToProfile() => Navigation.NavigateTo("/perfil");
+
+    private static string Initials(string? name) =>
+        string.IsNullOrWhiteSpace(name) ? "?" : name[..Math.Min(2, name.Length)].ToUpperInvariant();
+
+    private static string Role(System.Security.Claims.ClaimsPrincipal user) =>
+        user.Claims.FirstOrDefault(claim =>
+            claim.Type == "role" || claim.Type.EndsWith("/role"))?.Value ?? "Usuario";
+
+    private sealed record ProductItem(int Id, string Name, string Category, decimal Price, string Unit, string SaleType, string Symbol, string ColorClass);
+    private sealed class CartLine(ProductItem product, decimal quantity, Guid? scaleReadingId = null)
+    {
+        public ProductItem Product { get; } = product;
+        public decimal Quantity { get; set; } = quantity;
+        public Guid? ScaleReadingId { get; set; } = scaleReadingId;
+        public decimal Total => Math.Round(Product.Price * Quantity, 2, MidpointRounding.AwayFromZero);
+    }
+}

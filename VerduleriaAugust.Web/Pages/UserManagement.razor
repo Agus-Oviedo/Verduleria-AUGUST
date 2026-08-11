@@ -1,0 +1,145 @@
+@page "/usuarios"
+@attribute [Authorize(Roles = "Administrador")]
+@inject UsersService UsersService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Usuarios · Augustu</PageTitle>
+
+<div class="users-page">
+    <header class="topbar">
+        <button class="back-button" type="button" @onclick="GoBack">← Panel principal</button>
+        <div class="brand"><strong>Augustu</strong><span>Seguridad y acceso</span></div>
+        <button class="new-button" type="button" @onclick="OpenCreate">+ Nuevo usuario</button>
+    </header>
+
+    <main>
+        <section class="page-heading">
+            <div><p>SEGURIDAD</p><h1>Usuarios y roles</h1><span>Administrá quién puede ingresar al sistema.</span></div>
+            <div class="heading-actions"><button @onclick="ToggleAudit">@(ShowAudit ? "Ocultar auditoría" : "Ver auditoría")</button><div class="counts"><strong>@UserItems.Count(u => u.Activo)</strong><span>activos</span><strong>@UserItems.Count</strong><span>totales</span></div></div>
+        </section>
+
+        @if (ShowAudit)
+        {
+            <section class="audit-panel">
+                <div class="audit-heading"><div><h2>Historial de seguridad</h2><span>Altas, cambios de rol, estados y restablecimientos de acceso.</span></div><b>@AuditTotal evento(s)</b></div>
+                <div class="audit-filters"><select @bind="AuditUserId"><option value="">Todos los usuarios</option>@foreach (var user in UserItems) { <option value="@user.Id">@user.NombreUsuario</option> }</select><select @bind="AuditAction"><option value="">Todas las acciones</option><option value="UsuarioInvitado">Usuarios creados</option><option value="UsuarioActualizado">Roles y estados</option><option value="AccesoRestablecido">Accesos restablecidos</option><option value="PasswordCambiada">Contraseñas cambiadas</option></select><button @onclick="LoadAuditAsync">Filtrar</button></div>
+                @if (IsAuditLoading) { <div class="audit-state">Cargando auditoría…</div> }
+                else if (AuditError is not null) { <div class="audit-state error">@AuditError</div> }
+                else if (AuditItems.Count == 0) { <div class="audit-state">Todavía no hay eventos para mostrar.</div> }
+                else { <div class="audit-list">@foreach (var audit in AuditItems) { <article><span class="audit-icon">@AuditIcon(audit.Accion)</span><div><strong>@AuditTitle(audit.Accion) · @audit.UsuarioObjetivo</strong><small>@audit.Detalle</small></div><span class="audit-meta"><b>@audit.UsuarioActor</b>@audit.Fecha.ToString("dd/MM/yyyy HH:mm")</span></article> }</div> }
+            </section>
+        }
+
+        <section class="toolbar">
+            <label><span>⌕</span><input @bind="Search" @bind:event="oninput" placeholder="Buscar usuario…" /></label>
+            <select @bind="RoleFilter"><option value="">Todos los roles</option><option>Administrador</option><option>Encargado</option><option>Cajero</option></select>
+            <select @bind="StateFilter"><option value="">Todos los estados</option><option value="active">Activos</option><option value="inactive">Inactivos</option></select>
+        </section>
+
+        @if (IsLoading) { <div class="page-message">Cargando usuarios…</div> }
+        else if (Error is not null) { <div class="page-message error">@Error <button @onclick="LoadAsync">Reintentar</button></div> }
+        else if (!FilteredUsers.Any()) { <div class="page-message">No hay usuarios que coincidan con los filtros.</div> }
+        else
+        {
+            <section class="user-list">
+                @foreach (var user in FilteredUsers)
+                {
+                    <article class="user-card">
+                        <span class="avatar">@Initials(user.NombreUsuario)</span>
+                        <div class="identity"><strong>@user.NombreUsuario</strong><small>Creado el @user.FechaCreacion.ToString("dd/MM/yyyy")</small></div>
+                        <span class="role-badge @user.Rol.ToLowerInvariant()">@user.Rol</span>
+                        <span class="state-badge @(user.Activo ? "active" : "inactive")"><i></i>@(user.Activo ? "Activo" : "Inactivo")</span>
+                        <button class="edit-button" @onclick="() => OpenEdit(user)">Editar</button>
+                    </article>
+                }
+            </section>
+        }
+    </main>
+
+    @if (ShowEditor)
+    {
+        <div class="modal-backdrop" @onclick="CloseEditor">
+            <section class="editor-dialog" @onclick:stopPropagation>
+                <button class="dialog-x" @onclick="CloseEditor">×</button>
+                <p>USUARIOS</p><h2>@(EditingId.HasValue ? "Editar usuario" : "Crear nuevo usuario")</h2>
+                @if (!EditingId.HasValue)
+                {
+                    <div class="security-note"><strong>Acceso privado</strong><span>El sistema generará una contraseña temporal. El usuario deberá reemplazarla en su primer ingreso.</span></div>
+                    <label>Nombre de usuario<input @bind="UserName" maxlength="100" placeholder="Ej. caja2" /></label>
+                }
+                else { <div class="editing-user"><span class="avatar">@Initials(UserName)</span><strong>@UserName</strong></div> }
+                <label>Rol<select @bind="SelectedRole"><option>Administrador</option><option>Encargado</option><option>Cajero</option></select></label>
+                @if (EditingId.HasValue)
+                {
+                    <label class="switch-row"><span><strong>Usuario activo</strong><small>Permite iniciar sesión en el sistema</small></span><input type="checkbox" @bind="IsActive" /></label>
+                    <button class="reset-button" @onclick="ResetPasswordAsync">Generar nuevo acceso temporal</button>
+                }
+                @if (DialogError is not null) { <div class="dialog-error">@DialogError</div> }
+                <button class="save-button" disabled="@IsSaving" @onclick="SaveAsync">@(IsSaving ? "Guardando…" : EditingId.HasValue ? "Guardar cambios" : "Crear y generar acceso")</button>
+            </section>
+        </div>
+    }
+
+    @if (TemporaryPassword is not null)
+    {
+        <div class="modal-backdrop critical">
+            <section class="access-dialog">
+                <div class="key-icon">🔑</div><p>ACCESO TEMPORAL</p><h2>Entregale esta clave a @TemporaryUser</h2>
+                <span>Se mostrará una sola vez. En el primer ingreso deberá crear su propia contraseña.</span>
+                <div class="temporary-key"><code>@TemporaryPassword</code><button @onclick="CopyPasswordAsync">@(WasCopied ? "Copiada ✓" : "Copiar")</button></div>
+                <label class="acknowledge"><input type="checkbox" @bind="Acknowledged" /> Confirmo que guardé o entregué la contraseña temporal.</label>
+                <button class="finish-button" disabled="@(!Acknowledged)" @onclick="CloseTemporaryAccess">Finalizar</button>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private List<UserSummary> UserItems { get; } = [];
+    private string Search { get; set; } = "";
+    private string RoleFilter { get; set; } = "";
+    private string StateFilter { get; set; } = "";
+    private bool IsLoading { get; set; }
+    private string? Error { get; set; }
+    private bool ShowEditor { get; set; }
+    private int? EditingId { get; set; }
+    private string UserName { get; set; } = "";
+    private string SelectedRole { get; set; } = "Cajero";
+    private bool IsActive { get; set; } = true;
+    private bool IsSaving { get; set; }
+    private string? DialogError { get; set; }
+    private string? TemporaryPassword { get; set; }
+    private string TemporaryUser { get; set; } = "";
+    private bool Acknowledged { get; set; }
+    private bool WasCopied { get; set; }
+    private bool ShowAudit { get; set; }
+    private bool IsAuditLoading { get; set; }
+    private string? AuditError { get; set; }
+    private int? AuditUserId { get; set; }
+    private string AuditAction { get; set; } = "";
+    private int AuditTotal { get; set; }
+    private List<UserAuditItem> AuditItems { get; } = [];
+
+    private IEnumerable<UserSummary> FilteredUsers => UserItems.Where(user =>
+        (string.IsNullOrWhiteSpace(Search) || user.NombreUsuario.Contains(Search, StringComparison.OrdinalIgnoreCase)) &&
+        (string.IsNullOrWhiteSpace(RoleFilter) || user.Rol == RoleFilter) &&
+        (StateFilter != "active" || user.Activo) && (StateFilter != "inactive" || !user.Activo));
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync() { IsLoading = true; Error = null; try { UserItems.Clear(); UserItems.AddRange(await UsersService.GetAsync()); } catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException) { Error = ex.Message; } finally { IsLoading = false; } }
+    private void OpenCreate() { EditingId = null; UserName = ""; SelectedRole = "Cajero"; IsActive = true; DialogError = null; ShowEditor = true; }
+    private void OpenEdit(UserSummary user) { EditingId = user.Id; UserName = user.NombreUsuario; SelectedRole = user.Rol; IsActive = user.Activo; DialogError = null; ShowEditor = true; }
+    private void CloseEditor() { if (!IsSaving) ShowEditor = false; }
+    private async Task SaveAsync() { if (!EditingId.HasValue && UserName.Trim().Length < 3) { DialogError = "El usuario debe tener al menos 3 caracteres."; return; } IsSaving = true; DialogError = null; try { if (EditingId.HasValue) await UsersService.UpdateAsync(EditingId.Value, SelectedRole, IsActive); else { var access = await UsersService.InviteAsync(UserName, SelectedRole); ShowTemporaryAccess(UserName, access.PasswordTemporal); } ShowEditor = false; await LoadAsync(); } catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException) { DialogError = ex.Message; } finally { IsSaving = false; } }
+    private async Task ResetPasswordAsync() { if (!EditingId.HasValue) return; IsSaving = true; DialogError = null; try { var access = await UsersService.ResetPasswordAsync(EditingId.Value); ShowEditor = false; ShowTemporaryAccess(UserName, access.PasswordTemporal); await LoadAsync(); } catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException) { DialogError = ex.Message; } finally { IsSaving = false; } }
+    private void ShowTemporaryAccess(string user, string password) { TemporaryUser = user; TemporaryPassword = password; Acknowledged = false; WasCopied = false; }
+    private async Task CopyPasswordAsync() { await JS.InvokeVoidAsync("navigator.clipboard.writeText", TemporaryPassword); WasCopied = true; }
+    private void CloseTemporaryAccess() { if (!Acknowledged) return; TemporaryPassword = null; TemporaryUser = ""; }
+    private async Task ToggleAudit() { ShowAudit = !ShowAudit; if (ShowAudit) await LoadAuditAsync(); }
+    private async Task LoadAuditAsync() { IsAuditLoading = true; AuditError = null; try { var result = await UsersService.GetAuditAsync(userId: AuditUserId, action: AuditAction); AuditItems.Clear(); AuditItems.AddRange(result.Items); AuditTotal = result.Total; } catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException) { AuditError = ex.Message; } finally { IsAuditLoading = false; } }
+    private static string AuditIcon(string action) => action switch { "UsuarioInvitado" or "UsuarioCreado" => "+", "UsuarioActualizado" => "✎", "AccesoRestablecido" => "↻", "PasswordCambiada" => "●", _ => "·" };
+    private static string AuditTitle(string action) => action switch { "UsuarioInvitado" => "Usuario creado", "UsuarioCreado" => "Usuario creado", "UsuarioActualizado" => "Usuario actualizado", "AccesoRestablecido" => "Acceso restablecido", "PasswordCambiada" => "Contraseña cambiada", _ => action };
+    private static string Initials(string name) => name[..Math.Min(2, name.Length)].ToUpperInvariant();
+    private void GoBack() => Navigation.NavigateTo("/");
+}

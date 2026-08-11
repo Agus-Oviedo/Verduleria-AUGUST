@@ -1,0 +1,80 @@
+@page "/productos"
+@attribute [Authorize(Roles = "Administrador,Encargado")]
+@inject ProductsService ProductsService
+@inject NavigationManager Navigation
+
+<PageTitle>Productos · Augustu</PageTitle>
+<div class="products-page">
+    <header>
+        <button class="back" @onclick="GoToDashboard">← Panel principal</button>
+        <div><strong>Augustu</strong><span>Catálogo de productos</span></div>
+        <button class="stock" @onclick="OpenCreate">+ Nuevo producto</button>
+    </header>
+    <main>
+        <section class="heading"><div><p>CATÁLOGO</p><h1>Productos</h1><span>Precios y configuración comercial del inventario.</span></div><button class="visible-back-button" @onclick="GoToCategories">Administrar categorías</button></section>
+        <section class="filters"><input @bind="Search" @bind:event="oninput" placeholder="Buscar nombre o código…" @onkeydown="SearchKeyDown"/><select @bind="ActiveFilter"><option value="all">Todos</option><option value="active">Activos</option><option value="inactive">Inactivos</option></select><button @onclick="ApplyFilters">Buscar</button></section>
+        <section class="table-card">
+            @if (IsLoading) { <div class="message">Cargando productos…</div> }
+            else if (!string.IsNullOrWhiteSpace(Error)) { <div class="message error">@Error</div> }
+            else if (Items.Count == 0) { <div class="message">No hay productos para mostrar.</div> }
+            else { <div class="table-wrap"><table><thead><tr><th>Producto</th><th>Categoría</th><th>Venta</th><th>Precio kilo</th><th>Precio unidad</th><th>Stock</th><th>Estado</th><th></th></tr></thead><tbody>
+                @foreach (var product in Items) { <tr><td><strong>@product.Nombre</strong><small>@product.Codigo</small></td><td>@(product.Categoria ?? "Sin categoría")</td><td><span class="sale-type">@product.TipoVenta</span></td><td>@Price(product.PrecioPorKilo)</td><td>@Price(product.PrecioPorUnidad)</td><td><strong>@StockText(product)</strong></td><td><span class="state @(product.Activo ? "active" : "inactive")">@(product.Activo ? "Activo" : "Inactivo")</span></td><td><div class="row-actions"><button class="history" @onclick="() => OpenHistoryAsync(product)">Precios</button><button class="edit" @onclick="() => OpenEdit(product)">Editar</button></div></td></tr> }
+            </tbody></table></div> }
+        </section>
+        @if (TotalPages > 1) { <nav><button disabled="@(Page == 1)" @onclick="Previous">← Anterior</button><span>Página @Page de @TotalPages</span><button disabled="@(Page >= TotalPages)" @onclick="Next">Siguiente →</button></nav> }
+    </main>
+
+    @if (ShowEditor)
+    {
+        <div class="editor-backdrop" @onclick="CloseEditor">
+            <section class="editor" @onclick:stopPropagation>
+                <button class="close" @onclick="CloseEditor">×</button><p>PRODUCTOS</p><h2>@(EditingId.HasValue ? "Editar producto" : "Nuevo producto")</h2>
+                <div class="form-grid">
+                    <label>Código<input @bind="Form.Codigo" /></label><label>Nombre<input @bind="Form.Nombre" /></label>
+                    <label>Categoría<select @bind="Form.CategoriaId">@foreach (var category in Categories) { <option value="@category.Id">@category.Nombre</option> }</select></label>
+                    <label>Tipo de venta<select @bind="Form.TipoVenta"><option value="Peso">Peso</option><option value="Unidad">Unidad</option><option value="Ambos">Ambos</option></select></label>
+                    @if (Form.TipoVenta is "Peso" or "Ambos") { <label>Precio por kilo<input type="number" min="0.01" step="0.01" @bind="Form.PrecioPorKilo" /></label> }
+                    @if (Form.TipoVenta is "Unidad" or "Ambos") { <label>Precio por unidad<input type="number" min="0.01" step="0.01" @bind="Form.PrecioPorUnidad" /></label> }
+                    <label>Unidad de stock<select @bind="Form.UnidadMedida"><option value="Kg">Kg</option><option value="Unidad">Unidad</option></select></label>
+                    <label>Stock mínimo<input type="number" min="0" step="0.001" @bind="Form.StockMinimo" /></label>
+                    @if (!EditingId.HasValue) { <label>Stock inicial<input type="number" min="0" step="0.001" @bind="Form.StockInicial" /></label> }
+                    else { <label class="wide">Motivo del cambio de precio<input @bind="Form.MotivoCambioPrecio" placeholder="Obligatorio si cambia un precio" /></label><label class="check"><input type="checkbox" @bind="Form.Activo" /> Producto activo</label> }
+                </div>
+                @if (EditingId.HasValue) { <section class="purchase-cost-panel"><h3>Referencia para definir el precio</h3>@if(IsLoadingCosts){<span>Consultando compras…</span>}else if(PurchaseCosts?.UltimoCosto is null){<span>Todavía no hay costos de compra registrados para este producto.</span>}else{<div class="cost-cards"><div><small>Último costo de compra</small><b>$ @PurchaseCosts.UltimoCosto.Value.ToString("N2")</b><span>@PurchaseCosts.FechaUltimaCompra?.ToString("dd/MM/yyyy") · @PurchaseCosts.ProveedorUltimaCompra</span></div><div><small>Costo promedio</small><b>$ @PurchaseCosts.CostoPromedio?.ToString("N2")</b><span>Sobre @PurchaseCosts.CantidadConsiderada.ToString("0.###") @Form.UnidadMedida netos</span></div><div><small>Precio propuesto</small><b>@Price(ProposedSalePrice)</b><span>Ganancia @Price(EstimatedProfit) · margen @MarginText</span></div></div><small>Se excluyen recepciones anuladas y cantidades corregidas. El costo es informativo y no cambia el precio automáticamente.</small>}</section> }
+                @if (!string.IsNullOrWhiteSpace(EditorError)) { <div class="editor-error">@EditorError</div> }
+                <button class="save" disabled="@IsSaving" @onclick="SaveAsync">@(IsSaving ? "Guardando…" : "Guardar producto")</button>
+            </section>
+        </div>
+    }
+    @if (ShowHistory)
+    {
+        <div class="editor-backdrop" @onclick="CloseHistory"><section class="editor history-dialog" @onclick:stopPropagation><button class="close" @onclick="CloseHistory">×</button><p>AUDITORÍA</p><h2>Historial de precios · @HistoryProductName</h2>
+            @if (IsLoadingHistory) { <div class="history-message">Cargando historial…</div> }
+            else if (!string.IsNullOrWhiteSpace(HistoryError)) { <div class="editor-error">@HistoryError</div> }
+            else if (PriceHistory.Count == 0) { <div class="history-message">Este producto todavía no tiene cambios registrados.</div> }
+            else { <div class="history-list">@foreach (var entry in PriceHistory) { <article><div><strong>@entry.FechaCambio.ToString("dd/MM/yyyy HH:mm")</strong><span>@(entry.Usuario ?? "Sistema")</span></div><div class="price-change"><span>Kilo: @Price(entry.PrecioPorKiloAnterior) → @Price(entry.PrecioPorKiloNuevo)</span><span>Unidad: @Price(entry.PrecioPorUnidadAnterior) → @Price(entry.PrecioPorUnidadNuevo)</span></div><p>@entry.Motivo</p></article> }</div> }
+        </section></div>
+    }
+</div>
+
+@code {
+    private List<ProductSummary> Items { get; } = []; private List<CategorySummary> Categories { get; } = [];
+    private ProductForm Form { get; set; } = new(); private int? EditingId { get; set; } private bool ShowEditor { get; set; } private bool IsSaving { get; set; } private string? EditorError { get; set; } private PurchaseCostInfo? PurchaseCosts { get; set; } private bool IsLoadingCosts { get; set; }
+    private List<PriceHistoryEntry> PriceHistory { get; } = []; private bool ShowHistory { get; set; } private bool IsLoadingHistory { get; set; } private string HistoryProductName { get; set; } = ""; private string? HistoryError { get; set; }
+    private string Search { get; set; } = ""; private string ActiveFilter { get; set; } = "all"; private int Page { get; set; } = 1; private int Total { get; set; } private int TotalPages { get; set; } private bool IsLoading { get; set; } private string? Error { get; set; }
+    protected override async Task OnInitializedAsync() { await Task.WhenAll(LoadAsync(), LoadCategoriesAsync()); }
+    private async Task LoadCategoriesAsync() { Categories.AddRange(await ProductsService.GetCategoriesAsync()); }
+    private async Task LoadAsync() { IsLoading = true; Error = null; try { bool? active = ActiveFilter switch { "active" => true, "inactive" => false, _ => null }; var result = await ProductsService.GetPagedAsync(Page, Search, active); Items.Clear(); Items.AddRange(result.Items); Total = result.Total; TotalPages = result.TotalPaginas; } catch (Exception ex) when (ex is HttpRequestException or UnauthorizedAccessException) { Error = ex.Message; } finally { IsLoading = false; } }
+    private void OpenCreate() { EditingId = null; Form = new() { CategoriaId = Categories.FirstOrDefault()?.Id ?? 0 }; EditorError = null; ShowEditor = true; }
+    private async Task OpenEdit(ProductSummary p) { EditingId = p.Id; Form = new() { Codigo = p.Codigo, Nombre = p.Nombre, CategoriaId = p.CategoriaId, TipoVenta = p.TipoVenta, PrecioPorKilo = p.PrecioPorKilo, PrecioPorUnidad = p.PrecioPorUnidad, UnidadMedida = p.Stock?.UnidadMedida ?? "Kg", StockMinimo = p.Stock?.StockMinimo, Activo = p.Activo }; EditorError = null;PurchaseCosts=null;IsLoadingCosts=true;ShowEditor = true;try{PurchaseCosts=await ProductsService.GetPurchaseCostsAsync(p.Id);}catch(Exception ex){EditorError=ex.Message;}finally{IsLoadingCosts=false;} }
+    private void CloseEditor() { if (!IsSaving) ShowEditor = false; }
+    private async Task OpenHistoryAsync(ProductSummary product) { ShowHistory = true; IsLoadingHistory = true; HistoryProductName = product.Nombre; HistoryError = null; PriceHistory.Clear(); try { PriceHistory.AddRange(await ProductsService.GetPriceHistoryAsync(product.Id)); } catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException) { HistoryError = ex.Message; } finally { IsLoadingHistory = false; } }
+    private void CloseHistory() { if (!IsLoadingHistory) ShowHistory = false; }
+    private async Task SaveAsync() { EditorError = ValidateForm(); if (EditorError is not null) return; IsSaving = true; try { var kilo = Form.TipoVenta == "Unidad" ? null : Form.PrecioPorKilo; var unit = Form.TipoVenta == "Peso" ? null : Form.PrecioPorUnidad; await ProductsService.SaveAsync(EditingId, new(Form.Codigo, Form.Nombre, Form.CategoriaId, Form.TipoVenta, kilo, unit, Form.StockInicial, Form.UnidadMedida, Form.StockMinimo, Form.MotivoCambioPrecio, Form.Activo)); ShowEditor = false; await LoadAsync(); } catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or UnauthorizedAccessException) { EditorError = ex.Message; } finally { IsSaving = false; } }
+    private string? ValidateForm() { if (string.IsNullOrWhiteSpace(Form.Codigo) || string.IsNullOrWhiteSpace(Form.Nombre)) return "Código y nombre son obligatorios."; if (Form.CategoriaId < 1) return "Seleccioná una categoría."; if (Form.TipoVenta is "Peso" or "Ambos" && (!Form.PrecioPorKilo.HasValue || Form.PrecioPorKilo <= 0)) return "Ingresá el precio por kilo."; if (Form.TipoVenta is "Unidad" or "Ambos" && (!Form.PrecioPorUnidad.HasValue || Form.PrecioPorUnidad <= 0)) return "Ingresá el precio por unidad."; return null; }
+    private static string Price(decimal? value) => value.HasValue ? $"$ {value.Value:N2}" : "—"; private static string StockText(ProductSummary p) => p.Stock is null ? "Sin configurar" : $"{p.Stock.StockActual:N3} {p.Stock.UnidadMedida}";
+    private decimal? ProposedSalePrice=>Form.UnidadMedida=="Kg"?Form.PrecioPorKilo:Form.PrecioPorUnidad;private decimal? EstimatedProfit=>ProposedSalePrice.HasValue&&PurchaseCosts?.CostoPromedio is decimal cost?ProposedSalePrice.Value-cost:null;private string MarginText=>ProposedSalePrice>0&&EstimatedProfit.HasValue?$"{EstimatedProfit.Value/ProposedSalePrice.Value*100:N1}%":"—";
+    private async Task ApplyFilters() { Page = 1; await LoadAsync(); } private async Task SearchKeyDown(KeyboardEventArgs e) { if (e.Key == "Enter") await ApplyFilters(); } private async Task Previous() { if (Page > 1) { Page--; await LoadAsync(); } } private async Task Next() { if (Page < TotalPages) { Page++; await LoadAsync(); } } private void GoToDashboard() => Navigation.NavigateTo("/");
+    private void GoToCategories() => Navigation.NavigateTo("/categorias");
+    private sealed class ProductForm { public string Codigo { get; set; } = ""; public string Nombre { get; set; } = ""; public int CategoriaId { get; set; } public string TipoVenta { get; set; } = "Peso"; public decimal? PrecioPorKilo { get; set; } public decimal? PrecioPorUnidad { get; set; } public decimal StockInicial { get; set; } public string UnidadMedida { get; set; } = "Kg"; public decimal? StockMinimo { get; set; } public string? MotivoCambioPrecio { get; set; } public bool Activo { get; set; } = true; }
+}

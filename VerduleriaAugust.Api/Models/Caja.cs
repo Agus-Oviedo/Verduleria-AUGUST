@@ -15,4 +15,8 @@ public class Caja
     public DateTime FechaCreacion { get; set; }
 
     public ICollection<Venta> Ventas { get; set; } = new List<Venta>();
+
+    public ICollection<SesionCaja> Sesiones { get; set; } = new List<SesionCaja>();
+
+    public ICollection<Balanza> Balanzas { get; set; } = new List<Balanza>();
 }

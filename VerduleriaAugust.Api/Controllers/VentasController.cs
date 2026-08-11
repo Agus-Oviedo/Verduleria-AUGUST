@@ -1,47 +1,83 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using VerduleriaAugust.Api.DTOs;
 using VerduleriaAugust.Api.Models;
+using VerduleriaAugust.Api.Security;
+using VerduleriaAugust.Api.Services;
 
 namespace VerduleriaAugust.Api.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
+[Authorize(Roles = Roles.OperacionVenta)]
 public class VentasController : ControllerBase
 {
     private readonly AugustDbContext _context;
+    private readonly ILogger<VentasController>? _logger;
+    private readonly BalanzaLecturaStore _lecturaStore;
 
-    public VentasController(AugustDbContext context)
+    public VentasController(
+        AugustDbContext context,
+        ILogger<VentasController>? logger = null,
+        BalanzaLecturaStore? lecturaStore = null)
     {
         _context = context;
+        _logger = logger;
+        _lecturaStore = lecturaStore ?? new();
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetVentas()
+    [ProducesResponseType(typeof(RespuestaPaginada<VentaListadoDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetVentas([FromQuery] VentasConsultaDto consulta)
     {
-        var ventas = await _context.Ventas
+        if (consulta.Desde.HasValue && consulta.Hasta.HasValue && consulta.Desde > consulta.Hasta)
+            return BadRequest(new { mensaje = "La fecha Desde no puede ser posterior a Hasta." });
+
+        var query = _context.Ventas
             .AsNoTracking()
-            .Include(v => v.Caja)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(consulta.Buscar))
+        {
+            var buscar = consulta.Buscar.Trim();
+            query = query.Where(v => v.NumeroVenta.Contains(buscar));
+        }
+
+        if (consulta.CajaId.HasValue)
+            query = query.Where(v => v.CajaId == consulta.CajaId.Value);
+
+        if (!string.IsNullOrWhiteSpace(consulta.Estado))
+            query = query.Where(v => v.Estado == consulta.Estado);
+
+        if (consulta.Desde.HasValue)
+            query = query.Where(v => v.FechaVenta >= consulta.Desde.Value);
+
+        if (consulta.Hasta.HasValue)
+            query = query.Where(v => v.FechaVenta <= consulta.Hasta.Value);
+
+        var total = await query.CountAsync();
+        var ventas = await query
             .OrderByDescending(v => v.FechaVenta)
-            .Take(200)
-            .Select(v => new
-            {
-                v.Id,
-                v.NumeroVenta,
-                v.CajaId,
-                Caja = v.Caja != null ? v.Caja.Nombre : null,
-                v.FechaVenta,
-                v.Subtotal,
-                v.Descuento,
-                v.Total,
-                v.Estado
-            })
+            .ThenByDescending(v => v.Id)
+            .Skip((consulta.Pagina - 1) * consulta.TamanoPagina)
+            .Take(consulta.TamanoPagina)
+            .Select(v => new VentaListadoDto(
+                v.Id, v.NumeroVenta, v.IdempotencyKey, v.CajaId,
+                v.Caja != null ? v.Caja.Nombre : null,
+                v.FechaVenta, v.Subtotal, v.Descuento, v.Total, v.Estado,
+                string.Join(", ", v.Pagos.Select(p => p.FormaPago!.Nombre).Distinct())))
             .ToListAsync();
 
-        return Ok(ventas);
+        return Ok(new RespuestaPaginada<VentaListadoDto>(
+            ventas,
+            total,
+            consulta.Pagina,
+            consulta.TamanoPagina));
     }
 
     [HttpGet("{id:int}")]
+    [ProducesResponseType(typeof(VentaRespuestaDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetVenta(int id)
     {
         var venta = await _context.Ventas
@@ -51,42 +87,32 @@ public class VentasController : ControllerBase
                 .ThenInclude(d => d.Producto)
             .Include(v => v.Pagos)
                 .ThenInclude(p => p.FormaPago)
+            .Include(v => v.UsuarioDescuento)
+            .Include(v => v.Anulacion)
+                .ThenInclude(a => a!.Usuario)
             .Where(v => v.Id == id)
-            .Select(v => new
-            {
-                v.Id,
-                v.NumeroVenta,
-                v.CajaId,
-                Caja = v.Caja != null ? v.Caja.Nombre : null,
-                v.FechaVenta,
-                v.Subtotal,
-                v.Descuento,
-                v.Total,
-                v.Estado,
-
-                Detalles = v.Detalles.Select(d => new
-                {
-                    d.Id,
-                    d.ProductoId,
-                    Producto = d.Producto != null
-                        ? d.Producto.Nombre
-                        : null,
-                    d.TipoVenta,
-                    d.Cantidad,
-                    d.PrecioUnitario,
-                    d.TotalLinea
-                }),
-
-                Pagos = v.Pagos.Select(p => new
-                {
-                    p.Id,
-                    p.FormaPagoId,
-                    FormaPago = p.FormaPago != null
-                        ? p.FormaPago.Nombre
-                        : null,
-                    p.Importe
-                })
-            })
+            .Select(v => new VentaRespuestaDto(
+                v.Id, v.NumeroVenta, v.IdempotencyKey, v.CajaId,
+                v.Caja != null ? v.Caja.Nombre : null,
+                v.FechaVenta, v.Subtotal, v.Descuento, v.Total, v.Estado,
+                v.Detalles.Select(d => new VentaDetalleRespuestaDto(
+                    d.Id, d.ProductoId,
+                    d.Producto != null ? d.Producto.Nombre : null,
+                    d.TipoVenta, d.Cantidad, d.PrecioUnitario, d.TotalLinea)),
+                v.Pagos.Select(p => new PagoVentaRespuestaDto(
+                    p.Id, p.FormaPagoId,
+                    p.FormaPago != null ? p.FormaPago.Nombre : null,
+                    p.Importe)),
+                v.UsuarioDescuentoId == null || v.MotivoDescuento == null
+                    ? null
+                    : new DescuentoVentaRespuestaDto(
+                        v.MotivoDescuento, v.UsuarioDescuentoId.Value,
+                        v.UsuarioDescuento != null ? v.UsuarioDescuento.NombreUsuario : null),
+                v.Anulacion == null ? null : new AnulacionVentaRespuestaDto(
+                    v.Anulacion.Motivo, v.Anulacion.FechaAnulacion,
+                    v.Anulacion.Usuario != null
+                        ? v.Anulacion.Usuario.NombreUsuario
+                        : null)))
             .FirstOrDefaultAsync();
 
         if (venta == null)
@@ -101,6 +127,8 @@ public class VentasController : ControllerBase
     }
 
     [HttpPost]
+    [ProducesResponseType(typeof(VentaCreadaRespuestaDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(VentaExistenteRespuestaDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> CrearVenta([FromBody] CrearVentaDto dto)
     {
         var errorInicial = ValidarDatosIniciales(dto);
@@ -112,6 +140,14 @@ public class VentasController : ControllerBase
                 mensaje = errorInicial
             });
         }
+
+        var idempotencyKey = Guid.Parse(dto.IdempotencyKey).ToString("D");
+        var ventaExistente = await _context.Ventas
+            .AsNoTracking()
+            .SingleOrDefaultAsync(v => v.IdempotencyKey == idempotencyKey);
+
+        if (ventaExistente != null)
+            return RespuestaVentaExistente(ventaExistente);
 
         var cajaExiste = await _context.Cajas
             .AsNoTracking()
@@ -125,20 +161,56 @@ public class VentasController : ControllerBase
             });
         }
 
+        var sesionCaja = await _context.SesionesCaja
+            .AsNoTracking()
+            .SingleOrDefaultAsync(s => s.CajaId == dto.CajaId && s.Estado == "Abierta");
+
+        if (sesionCaja == null)
+            return Conflict(new { mensaje = "La caja no tiene una sesión abierta." });
+
+        var currentUser = ControllerContext.HttpContext?.User;
+        var currentUserIdValue = currentUser?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? currentUser?.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+        int? currentUserId = int.TryParse(currentUserIdValue, out var parsedUserId)
+            ? parsedUserId
+            : null;
+        if (currentUser?.IsInRole(Roles.Cajero) == true)
+        {
+            if (!currentUserId.HasValue || sesionCaja.UsuarioAperturaId != currentUserId.Value)
+                return Forbid();
+        }
+
+        if (dto.Descuento > 0)
+        {
+            if (currentUser?.IsInRole(Roles.Administrador) != true &&
+                currentUser?.IsInRole(Roles.Encargado) != true)
+                return Forbid();
+
+            if (!currentUserId.HasValue)
+                return Forbid();
+
+            if (string.IsNullOrWhiteSpace(dto.MotivoDescuento) || dto.MotivoDescuento.Trim().Length < 5)
+                return BadRequest(new { mensaje = "Debe indicar un motivo de descuento de al menos 5 caracteres." });
+        }
+
+        var lecturasReservadas = new HashSet<Guid>();
         await using var transaction =
             await _context.Database.BeginTransactionAsync();
 
         try
         {
-            var numeroVenta = await GenerarNumeroVentaAsync();
-
             var venta = new Venta
             {
-                NumeroVenta = numeroVenta,
+                // Valor único temporal hasta que SQL Server asigne el Id.
+                NumeroVenta = $"P-{idempotencyKey}",
+                IdempotencyKey = idempotencyKey,
                 CajaId = dto.CajaId,
+                SesionCajaId = sesionCaja.Id,
                 FechaVenta = DateTime.Now,
                 Subtotal = 0,
                 Descuento = dto.Descuento,
+                MotivoDescuento = dto.Descuento > 0 ? dto.MotivoDescuento!.Trim() : null,
+                UsuarioDescuentoId = dto.Descuento > 0 ? currentUserId : null,
                 Total = 0,
                 Estado = "Finalizada"
             };
@@ -152,10 +224,37 @@ public class VentasController : ControllerBase
              */
             await _context.SaveChangesAsync();
 
+            // El identity de SQL Server es atómico entre todas las cajas.
+            venta.NumeroVenta = $"V-{venta.FechaVenta:yyyyMMdd}-{venta.Id:0000000000}";
+            var numeroVenta = venta.NumeroVenta;
+
             decimal subtotal = 0;
 
             foreach (var item in dto.Items)
             {
+                if (item.LecturaBalanzaId.HasValue)
+                {
+                    if (item.TipoVenta != "Peso" ||
+                        !_lecturaStore.TryReserve(
+                            item.LecturaBalanzaId.Value,
+                            dto.CajaId,
+                            DateTimeOffset.UtcNow,
+                            out var lectura) ||
+                        lectura is null)
+                    {
+                        throw new VentaValidationException(
+                            "La lectura de balanza no es válida, está vencida, " +
+                            "es inestable o ya fue utilizada.");
+                    }
+
+                    lecturasReservadas.Add(item.LecturaBalanzaId.Value);
+                    if (lectura.PesoKg != item.Cantidad)
+                    {
+                        throw new VentaValidationException(
+                            "El peso enviado no coincide con la lectura recibida desde la balanza.");
+                    }
+                }
+
                 var producto = await _context.Productos
                     .Include(p => p.Stock)
                     .FirstOrDefaultAsync(p =>
@@ -227,6 +326,7 @@ public class VentasController : ControllerBase
                 var movimiento = new MovimientoStock
                 {
                     ProductoId = producto.Id,
+                    UsuarioId = currentUserId,
                     TipoMovimiento = "Salida",
                     Cantidad = item.Cantidad,
                     StockAnterior = stockAnterior,
@@ -304,23 +404,22 @@ public class VentasController : ControllerBase
             await _context.SaveChangesAsync();
 
             await transaction.CommitAsync();
+            foreach (var lecturaId in lecturasReservadas)
+                _lecturaStore.Complete(lecturaId);
 
             return CreatedAtAction(
                 nameof(GetVenta),
                 new { id = venta.Id },
-                new
-                {
-                    mensaje = "Venta registrada correctamente.",
-                    venta.Id,
-                    venta.NumeroVenta,
-                    venta.Subtotal,
-                    venta.Descuento,
-                    venta.Total
-                });
+                new VentaCreadaRespuestaDto(
+                    "Venta registrada correctamente.", venta.Id,
+                    venta.NumeroVenta, venta.Subtotal, venta.Descuento,
+                    venta.Total, venta.IdempotencyKey));
         }
         catch (VentaValidationException ex)
         {
             await transaction.RollbackAsync();
+            foreach (var lecturaId in lecturasReservadas)
+                _lecturaStore.Release(lecturaId);
 
             return BadRequest(new
             {
@@ -330,6 +429,8 @@ public class VentasController : ControllerBase
         catch (DbUpdateConcurrencyException)
         {
             await transaction.RollbackAsync();
+            foreach (var lecturaId in lecturasReservadas)
+                _lecturaStore.Release(lecturaId);
 
             /*
              * Quitamos las entidades cargadas del ChangeTracker.
@@ -345,9 +446,29 @@ public class VentasController : ControllerBase
                 codigo = "STOCK_CONCURRENCIA"
             });
         }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync();
+            foreach (var lecturaId in lecturasReservadas)
+                _lecturaStore.Release(lecturaId);
+            _context.ChangeTracker.Clear();
+
+            // Dos solicitudes iguales pueden superar juntas la consulta inicial.
+            // El índice único decide cuál se guarda; la otra devuelve la ya creada.
+            var duplicada = await _context.Ventas
+                .AsNoTracking()
+                .SingleOrDefaultAsync(v => v.IdempotencyKey == idempotencyKey);
+
+            if (duplicada != null)
+                return RespuestaVentaExistente(duplicada);
+
+            throw;
+        }
         catch
         {
             await transaction.RollbackAsync();
+            foreach (var lecturaId in lecturasReservadas)
+                _lecturaStore.Release(lecturaId);
             throw;
         }
     }
@@ -357,6 +478,11 @@ public class VentasController : ControllerBase
         if (dto.CajaId <= 0)
         {
             return "Debe indicar una caja válida.";
+        }
+
+        if (!Guid.TryParse(dto.IdempotencyKey, out _))
+        {
+            return "IdempotencyKey debe ser un GUID válido generado por la caja.";
         }
 
         if (dto.Descuento < 0)
@@ -435,22 +561,120 @@ public class VentasController : ControllerBase
         return producto.PrecioPorUnidad.Value;
     }
 
-    private async Task<string> GenerarNumeroVentaAsync()
+    private static IActionResult RespuestaVentaExistente(Venta venta)
     {
-        var ahora = DateTime.Now;
-        var fecha = ahora.ToString("yyyyMMdd");
+        return new OkObjectResult(new VentaExistenteRespuestaDto(
+            "La venta ya había sido registrada.", true, venta.Id,
+            venta.NumeroVenta, venta.Subtotal, venta.Descuento,
+            venta.Total, venta.IdempotencyKey));
+    }
 
-        var inicioDia = ahora.Date;
-        var finDia = inicioDia.AddDays(1);
+    [HttpPost("{id:int}/anular")]
+    [Authorize(Roles = Roles.Administracion)]
+    [ProducesResponseType(typeof(VentaAnuladaRespuestaDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> AnularVenta(int id, [FromBody] AnularVentaDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Motivo) || dto.Motivo.Trim().Length < 5)
+            return BadRequest(new { mensaje = "El motivo debe tener al menos 5 caracteres." });
+        if (dto.Motivo.Trim().Length > 300)
+            return BadRequest(new { mensaje = "El motivo no puede superar 300 caracteres." });
 
-        var cantidadVentasHoy = await _context.Ventas
-            .CountAsync(v =>
-                v.FechaVenta >= inicioDia &&
-                v.FechaVenta < finDia);
+        var userIdValue = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+        if (!int.TryParse(userIdValue, out var userId))
+            return Unauthorized(new { mensaje = "El token no identifica un usuario válido." });
 
-        var correlativo = cantidadVentasHoy + 1;
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            var venta = await _context.Ventas
+                .Include(v => v.Anulacion)
+                .Include(v => v.Detalles)
+                    .ThenInclude(d => d.Producto)
+                        .ThenInclude(p => p!.Stock)
+                .SingleOrDefaultAsync(v => v.Id == id);
 
-        return $"V-{fecha}-{correlativo:000000}";
+            if (venta == null)
+                return NotFound(new { mensaje = "Venta no encontrada." });
+            if (venta.Estado != "Finalizada" || venta.Anulacion != null)
+                return Conflict(new { mensaje = "La venta ya está anulada o no puede anularse." });
+
+            foreach (var group in venta.Detalles.GroupBy(d => d.ProductoId))
+            {
+                var producto = group.First().Producto;
+                if (producto?.Stock == null)
+                    throw new InvalidOperationException(
+                        $"El producto {group.Key} no tiene stock configurado.");
+
+                var cantidad = group.Sum(d => d.Cantidad);
+                var stockAnterior = producto.Stock.StockActual;
+                producto.Stock.StockActual += cantidad;
+                producto.Stock.FechaActualizacion = DateTime.Now;
+                var motivoMovimiento = $"Anulación {venta.NumeroVenta}: {dto.Motivo.Trim()}";
+
+                _context.MovimientosStock.Add(new MovimientoStock
+                {
+                    ProductoId = producto.Id,
+                    UsuarioId = userId,
+                    // La restricción CK_MovimientosStock_Tipo de la base admite
+                    // Entrada, Salida y Ajuste. Una anulación repone mercadería,
+                    // por lo que se registra como Entrada y se audita en Motivo.
+                    TipoMovimiento = "Entrada",
+                    Cantidad = cantidad,
+                    StockAnterior = stockAnterior,
+                    StockNuevo = producto.Stock.StockActual,
+                    Motivo = motivoMovimiento.Length <= 200
+                        ? motivoMovimiento
+                        : motivoMovimiento[..200],
+                    FechaMovimiento = DateTime.Now
+                });
+            }
+
+            venta.Estado = "Anulada";
+            _context.VentaAnulaciones.Add(new VentaAnulacion
+            {
+                VentaId = venta.Id,
+                UsuarioId = userId,
+                Motivo = dto.Motivo.Trim(),
+                FechaAnulacion = DateTime.Now
+            });
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return Ok(new VentaAnuladaRespuestaDto(
+                "Venta anulada y stock repuesto correctamente.",
+                venta.Id, venta.NumeroVenta, venta.Estado));
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync();
+            _context.ChangeTracker.Clear();
+            return Conflict(new
+            {
+                mensaje = "El stock cambió mientras se anulaba la venta.",
+                codigo = "STOCK_CONCURRENCIA"
+            });
+        }
+        catch (DbUpdateException ex)
+        {
+            await transaction.RollbackAsync();
+            _context.ChangeTracker.Clear();
+            _logger?.LogError(ex, "Error de base de datos al anular la venta {VentaId}.", id);
+
+            var yaAnulada = await _context.Ventas.AsNoTracking()
+                .AnyAsync(v => v.Id == id && v.Estado == "Anulada");
+            if (yaAnulada)
+                return Ok(new VentaAnuladaRespuestaDto(
+                    "La venta ya estaba anulada; no se repuso stock nuevamente.",
+                    id, string.Empty, "Anulada"));
+
+            return Conflict(new
+            {
+                mensaje = "La base de datos rechazó la anulación. No se modificó la venta ni el stock.",
+                codigo = "ANULACION_DB_ERROR"
+            });
+        }
     }
 
     private sealed class VentaValidationException : Exception

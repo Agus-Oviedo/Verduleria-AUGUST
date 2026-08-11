@@ -1,0 +1,32 @@
+@page "/stock"
+@attribute [Authorize(Roles = "Administrador,Encargado")]
+@inject StockService StockService
+@inject NavigationManager Navigation
+
+<PageTitle>Stock · Augustu</PageTitle>
+
+<div class="stock-page">
+    <header><button class="back" @onclick="GoToDashboard">← Panel principal</button><div><strong>Augustu</strong><span>Control de stock</span></div><button class="sales" @onclick="GoToMovements">Ver movimientos</button></header>
+    <main>
+        <section class="heading"><div><p>INVENTARIO</p><h1>Stock actual</h1><span>Existencias registradas en la base de datos.</span></div><div class="summary"><strong>@Total</strong><span>productos</span><strong class="warning">@LowCount</strong><span>bajo mínimo</span></div></section>
+        <section class="filters"><input @bind="Search" @bind:event="oninput" placeholder="Buscar producto o código…" @onkeydown="SearchKeyDown" /><select @bind="StockFilter"><option value="all">Todo el stock</option><option value="low">Solo bajo stock</option><option value="ok">Stock disponible</option></select><button @onclick="ApplyFilters">Buscar</button></section>
+        <section class="stock-grid">
+            @if (IsLoading) { <div class="message">Cargando stock…</div> }
+            else if (!string.IsNullOrWhiteSpace(Error)) { <div class="message error">@Error <button @onclick="LoadAsync">Reintentar</button></div> }
+            else if (Items.Count == 0) { <div class="message">No se encontraron productos.</div> }
+            else foreach (var item in Items)
+            {
+                <article class="stock-card @(item.BajoStock ? "low" : null)"><div class="card-top"><span>@(item.Categoria ?? "Sin categoría")</span><b>@(item.BajoStock ? "BAJO STOCK" : "DISPONIBLE")</b></div><h2>@item.Producto</h2><small>@item.Codigo</small><div class="quantity"><strong>@item.StockActual.ToString("N3")</strong><span>@item.UnidadMedida</span></div><div class="minimum"><span>Mínimo</span><strong>@(item.StockMinimo?.ToString("N3") ?? "No definido")</strong></div><footer>Actualizado @item.FechaActualizacion.ToString("dd/MM/yyyy HH:mm")</footer></article>
+            }
+        </section>
+        @if (TotalPages > 1) { <nav><button disabled="@(Page == 1)" @onclick="Previous">← Anterior</button><span>Página @Page de @TotalPages</span><button disabled="@(Page >= TotalPages)" @onclick="Next">Siguiente →</button></nav> }
+    </main>
+</div>
+
+@code {
+    private List<StockSummary> Items { get; }=[]; private string Search {get;set;}=""; private string StockFilter {get;set;}="all"; private int Page{get;set;}=1; private int Total{get;set;} private int TotalPages{get;set;} private bool IsLoading{get;set;} private string? Error{get;set;} private int LowCount => Items.Count(x=>x.BajoStock);
+    protected override Task OnInitializedAsync()=>LoadAsync();
+    private async Task LoadAsync(){IsLoading=true;Error=null;try{bool? low=StockFilter switch{"low"=>true,"ok"=>false,_=>null};var result=await StockService.GetAsync(Page,Search,low);Items.Clear();Items.AddRange(result.Items);Total=result.Total;TotalPages=result.TotalPaginas;}catch(Exception ex)when(ex is HttpRequestException or UnauthorizedAccessException){Error=ex.Message;}finally{IsLoading=false;}}
+    private async Task ApplyFilters(){Page=1;await LoadAsync();} private async Task SearchKeyDown(KeyboardEventArgs e){if(e.Key=="Enter")await ApplyFilters();} private async Task Previous(){if(Page>1){Page--;await LoadAsync();}} private async Task Next(){if(Page<TotalPages){Page++;await LoadAsync();}}
+    private void GoToDashboard()=>Navigation.NavigateTo("/"); private void GoToMovements()=>Navigation.NavigateTo("/stock/movimientos");
+}

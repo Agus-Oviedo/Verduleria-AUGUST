@@ -23,4 +23,6 @@ public class Producto
     public Categoria? Categoria { get; set; }
 
     public Stock? Stock { get; set; }
+
+    public ICollection<HistorialPrecio> HistorialPrecios { get; set; } = new List<HistorialPrecio>();
 }

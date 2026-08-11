@@ -9,3 +9,4 @@ appsettings.Local.json
 secrets.json
 logs/
 *.log
+artifacts/
