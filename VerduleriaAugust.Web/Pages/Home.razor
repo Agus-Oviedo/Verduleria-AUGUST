@@ -196,10 +196,10 @@
                     @foreach (var payment in CheckoutPayments)
                     {
                         <div class="payment-line" @key="payment">
-                            <select @bind="payment.PaymentMethodId">
+                            <select @bind="payment.PaymentMethodId" @bind:after="SynchronizeCashReceived">
                                 @foreach (var method in PaymentMethods) { <option value="@method.Id">@method.Nombre</option> }
                             </select>
-                            <div class="payment-amount"><span>$</span><input type="number" min="0.01" step="0.01" @bind="payment.Amount" /></div>
+                            <div class="payment-amount"><span>$</span><input type="number" min="0.01" step="0.01" @bind="payment.Amount" @bind:after="SynchronizeCashReceived" /></div>
                             <button type="button" class="fill-payment" title="Completar saldo restante" @onclick="() => FillRemaining(payment)">Saldo</button>
                             @if (CheckoutPayments.Count > 1) { <button type="button" class="remove-payment" title="Quitar pago" @onclick="() => RemovePayment(payment)">×</button> }
                         </div>
@@ -210,8 +210,8 @@
                 @if (HasCashPayment)
                 {
                     <div class="cash-received">
-                        <label>Efectivo recibido<div><span>$</span><input type="number" min="0" step="0.01" @bind="CashReceived" /></div></label>
-                        <p class="@(CashReceivedIsValid ? "valid" : "invalid")"><span>Vuelto</span><strong>$ @CashChange.ToString("N2")</strong><small>Debe cubrir los $ @CashPaymentTotal.ToString("N2") pagados en efectivo</small></p>
+                        <label>Dinero entregado por el cliente<div><span>$</span><input type="number" min="0" step="0.01" @bind="CashReceived" /></div></label>
+                        <p class="@(CashReceivedIsValid ? "valid" : "invalid")"><span>@(CashReceivedIsValid ? "Vuelto" : "Falta en efectivo")</span><strong>$ @(CashReceivedIsValid ? CashChange : CashShortage).ToString("N2")</strong><small>@(CashReceivedIsValid ? $"Debe cubrir los $ {CashPaymentTotal:N2} asignados a efectivo" : $"El cliente debe entregar al menos $ {CashPaymentTotal:N2}")</small></p>
                     </div>
                 }
                 @if (HasRepeatedPaymentMethods) { <div class="sale-error">No repitas la misma forma de pago.</div> }
@@ -236,7 +236,7 @@
                 </div>
                 <div class="receipt-totals"><span>Subtotal <b>$ @Receipt.Subtotal.ToString("N2")</b></span><span>Descuento <b>$ @Receipt.Descuento.ToString("N2")</b></span><strong>Total <b>$ @Receipt.Total.ToString("N2")</b></strong></div>
                 <div class="receipt-payments">@foreach (var payment in Receipt.Pagos) { <span>@payment.FormaPago <b>$ @payment.Importe.ToString("N2")</b></span> }</div>
-                @if (ReceiptCashReceived is not null) { <div class="receipt-cash"><span>Efectivo recibido <b>$ @ReceiptCashReceived.Value.ToString("N2")</b></span><strong>Vuelto <b>$ @ReceiptChange.ToString("N2")</b></strong></div> }
+                @if (ReceiptCashReceived is not null) { <div class="receipt-cash"><span>Dinero entregado <b>$ @ReceiptCashReceived.Value.ToString("N2")</b></span><strong>Vuelto <b>$ @ReceiptChange.ToString("N2")</b></strong></div> }
                 <footer><span>Gracias por elegir Augustu</span><small>Comprobante interno no fiscal</small></footer>
                 <div class="receipt-actions"><button class="secondary" @onclick="PrintReceipt">Imprimir</button><button @onclick="CloseReceipt">Nueva venta</button></div>
             </section>
@@ -281,6 +281,7 @@
     private decimal CashPaymentTotal => Math.Round(CheckoutPayments.Where(payment => PaymentMethods.Any(method => method.Id == payment.PaymentMethodId && method.EsEfectivo)).Sum(payment => payment.Amount), 2, MidpointRounding.AwayFromZero);
     private bool HasCashPayment => CashPaymentTotal > 0;
     private decimal CashChange => Math.Max(Math.Round(CashReceived - CashPaymentTotal, 2, MidpointRounding.AwayFromZero), 0);
+    private decimal CashShortage => Math.Max(Math.Round(CashPaymentTotal - CashReceived, 2, MidpointRounding.AwayFromZero), 0);
     private bool CashReceivedIsValid => !HasCashPayment || CashReceived >= CashPaymentTotal;
     private bool DiscountIsValid => Discount >= 0 && Discount < Subtotal && (Discount == 0 || DiscountReason.Trim().Length is >= 5 and <= 300);
     private bool PaymentsAreValid => DiscountIsValid && CheckoutPayments.Count > 0 && CheckoutPayments.All(payment => payment.PaymentMethodId > 0 && payment.Amount > 0) && !HasRepeatedPaymentMethods && PaymentDifference == 0 && CashReceivedIsValid;
@@ -291,7 +292,7 @@
             : PaymentDifference != 0
                 ? "Corregí los importes para continuar"
                 : !CashReceivedIsValid
-                    ? "El efectivo recibido es insuficiente"
+                    ? $"Faltan $ {CashShortage:N2} en efectivo"
                     : "Confirmar y cobrar";
     private string RegisterStatus => SelectedRegister?.SesionAbierta is { } session
         ? $"Desde {session.FechaApertura:HH:mm} · Inicial $ {session.SaldoInicial:N2}"
@@ -494,19 +495,24 @@
     {
         var method = PaymentMethods.FirstOrDefault(candidate => CheckoutPayments.All(payment => payment.PaymentMethodId != candidate.Id));
         if (method is not null) CheckoutPayments.Add(new CheckoutPayment(method.Id, Math.Max(PaymentDifference, 0)));
+        SynchronizeCashReceived();
     }
 
     private void RemovePayment(CheckoutPayment payment)
     {
         CheckoutPayments.Remove(payment);
         if (CheckoutPayments.Count == 1) CheckoutPayments[0].Amount = TotalToPay;
+        SynchronizeCashReceived();
     }
 
     private void FillRemaining(CheckoutPayment payment)
     {
         var otherPayments = CheckoutPayments.Where(candidate => !ReferenceEquals(candidate, payment)).Sum(candidate => candidate.Amount);
         payment.Amount = Math.Max(Math.Round(TotalToPay - otherPayments, 2, MidpointRounding.AwayFromZero), 0);
+        SynchronizeCashReceived();
     }
+
+    private void SynchronizeCashReceived() => CashReceived = HasCashPayment ? CashPaymentTotal : 0;
 
     private async Task SubmitSaleAsync()
     {
