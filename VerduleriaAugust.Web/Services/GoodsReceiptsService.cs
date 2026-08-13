@@ -10,8 +10,16 @@ public sealed class GoodsReceiptsService(HttpClient http, IJSRuntime js)
     public async Task<IReadOnlyList<SupplierItem>> GetSuppliersAsync() =>
         await SendAsync<IReadOnlyList<SupplierItem>>(HttpMethod.Get, "api/recepciones-mercaderia/proveedores") ?? [];
 
-    public async Task<IReadOnlyList<GoodsReceiptItem>> GetHistoryAsync() =>
-        await SendAsync<IReadOnlyList<GoodsReceiptItem>>(HttpMethod.Get, "api/recepciones-mercaderia") ?? [];
+    public async Task<PagedGoodsReceipts> GetHistoryAsync(int page, string? search, int? supplierId, string? status, DateTime? from, DateTime? to)
+    {
+        var uri = $"api/recepciones-mercaderia?pagina={page}&tamanoPagina=10";
+        if (!string.IsNullOrWhiteSpace(search)) uri += $"&buscar={Uri.EscapeDataString(search.Trim())}";
+        if (supplierId.HasValue) uri += $"&proveedorId={supplierId.Value}";
+        if (!string.IsNullOrWhiteSpace(status)) uri += $"&estado={Uri.EscapeDataString(status)}";
+        if (from.HasValue) uri += $"&desde={from.Value:yyyy-MM-dd}";
+        if (to.HasValue) uri += $"&hasta={to.Value:yyyy-MM-dd}";
+        return await SendAsync<PagedGoodsReceipts>(HttpMethod.Get, uri) ?? new([], 0, page, 10, 0);
+    }
 
     public async Task<IReadOnlyList<GoodsReceiptAuditItem>> GetAuditAsync(int id) =>
         await SendAsync<IReadOnlyList<GoodsReceiptAuditItem>>(HttpMethod.Get, $"api/recepciones-mercaderia/{id}/auditoria") ?? [];
@@ -95,6 +103,7 @@ public sealed record ReceiptCorrectionRequest(int ProductoId, decimal Cantidad);
 public sealed record ReceiptCreatedResult(string Mensaje, int Id, string NumeroRecepcion, decimal TotalCosto);
 public sealed record OperationResult(string Mensaje);
 public sealed record GoodsReceiptAuditItem(int Id, string Tipo, string Detalle, DateTime Fecha, string Usuario);
+public sealed record PagedGoodsReceipts(IReadOnlyList<GoodsReceiptItem> Items, int Total, int Pagina, int TamanoPagina, int TotalPaginas);
 public sealed record GoodsReceiptDetail(int ProductoId, string Producto, decimal Cantidad, decimal CantidadCorregida, decimal? CostoUnitario, decimal? TotalCosto)
 {
     public decimal CantidadPendiente => Cantidad - CantidadCorregida;

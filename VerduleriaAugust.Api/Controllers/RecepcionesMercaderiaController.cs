@@ -12,11 +12,20 @@ namespace VerduleriaAugust.Api.Controllers;
 public sealed class RecepcionesMercaderiaController(AugustDbContext context) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GetRecepciones()
+    public async Task<IActionResult> GetRecepciones([FromQuery] int pagina = 1, [FromQuery] int tamanoPagina = 10, [FromQuery] string? buscar = null, [FromQuery] int? proveedorId = null, [FromQuery] string? estado = null, [FromQuery] DateTime? desde = null, [FromQuery] DateTime? hasta = null)
     {
-        var items = await context.RecepcionesMercaderia.AsNoTracking().OrderByDescending(r => r.FechaRecepcion).Take(100)
+        pagina = Math.Max(1, pagina); tamanoPagina = Math.Clamp(tamanoPagina, 1, 50);
+        if (desde.HasValue && hasta.HasValue && desde.Value.Date > hasta.Value.Date) return BadRequest(new { mensaje = "La fecha desde no puede ser posterior a la fecha hasta." });
+        var query = context.RecepcionesMercaderia.AsNoTracking().AsQueryable();
+        if (!string.IsNullOrWhiteSpace(buscar)) { var texto = buscar.Trim(); query = query.Where(r => r.NumeroRecepcion.Contains(texto) || (r.Comprobante != null && r.Comprobante.Contains(texto))); }
+        if (proveedorId.HasValue) query = query.Where(r => r.ProveedorId == proveedorId.Value);
+        if (!string.IsNullOrWhiteSpace(estado)) query = query.Where(r => r.Estado == estado);
+        if (desde.HasValue) query = query.Where(r => r.FechaRecepcion >= desde.Value.Date);
+        if (hasta.HasValue) { var limite = hasta.Value.Date.AddDays(1); query = query.Where(r => r.FechaRecepcion < limite); }
+        var total = await query.CountAsync();
+        var items = await query.OrderByDescending(r => r.FechaRecepcion).ThenByDescending(r => r.Id).Skip((pagina - 1) * tamanoPagina).Take(tamanoPagina)
             .Select(r => new { r.Id, r.NumeroRecepcion, r.FechaRecepcion, r.ProveedorId, Proveedor = r.Proveedor!.Nombre, Usuario = r.Usuario!.NombreUsuario, r.Comprobante, r.Observaciones, r.TotalCosto, r.Estado, Detalles = r.Detalles.Select(d => new { d.ProductoId, Producto = d.Producto!.Nombre, d.Cantidad, CantidadCorregida = r.Correcciones.SelectMany(c => c.Detalles).Where(cd => cd.ProductoId == d.ProductoId).Sum(cd => (decimal?)cd.Cantidad) ?? 0, d.CostoUnitario, d.TotalCosto }) }).ToListAsync();
-        return Ok(items);
+        return Ok(new { items, total, pagina, tamanoPagina, totalPaginas = (int)Math.Ceiling(total / (double)tamanoPagina) });
     }
 
     [HttpGet("proveedores")]
