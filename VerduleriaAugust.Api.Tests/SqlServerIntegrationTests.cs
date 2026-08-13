@@ -377,6 +377,101 @@ public class SqlServerIntegrationTests
         Assert.Single(await assertContext.SesionesCaja.Where(s => s.Estado == "Abierta").ToListAsync());
     }
 
+    [SqlServerFact]
+    [Trait("Category", "SqlServerIntegration")]
+    public async Task Recepcion_CorreccionYAnulacion_MantienenStockYAuditoriaConsistentes()
+    {
+        await using var database = await SqlServerTestDatabase.CreateAsync();
+        await database.SeedVentaAsync();
+
+        int productoId;
+        int usuarioId;
+        int proveedorId;
+        await using (var arrange = database.CreateContext())
+        {
+            productoId = await arrange.Productos.Select(p => p.Id).SingleAsync();
+            usuarioId = await arrange.Usuarios.Select(u => u.Id).SingleAsync();
+            var proveedor = new Proveedor
+            {
+                Nombre = "Proveedor SQL",
+                Activo = true,
+                FechaCreacion = DateTime.Now
+            };
+            arrange.Proveedores.Add(proveedor);
+            await arrange.SaveChangesAsync();
+            proveedorId = proveedor.Id;
+        }
+
+        int recepcionId;
+        await using (var receiveContext = database.CreateContext())
+        {
+            var result = await CreateAuthenticatedGoodsReceiptController(receiveContext, usuarioId)
+                .CrearRecepcion(new CrearRecepcionMercaderiaDto
+                {
+                    ProveedorId = proveedorId,
+                    Comprobante = "REMITO-SQL-001",
+                    Items =
+                    [
+                        new CrearRecepcionDetalleDto
+                        {
+                            ProductoId = productoId,
+                            Cantidad = 5m,
+                            CostoUnitario = 100m
+                        }
+                    ]
+                });
+            var created = Assert.IsType<ObjectResult>(result);
+            Assert.Equal(201, created.StatusCode);
+            recepcionId = await receiveContext.RecepcionesMercaderia.Select(r => r.Id).SingleAsync();
+        }
+
+        await using (var afterReceipt = database.CreateContext())
+        {
+            Assert.Equal(15m, await afterReceipt.Stock.Select(s => s.StockActual).SingleAsync());
+            var recepcion = await afterReceipt.RecepcionesMercaderia.Include(r => r.Detalles).SingleAsync();
+            Assert.Equal("Confirmada", recepcion.Estado);
+            Assert.Equal(500m, recepcion.TotalCosto);
+            Assert.Single(recepcion.Detalles);
+            var entrada = Assert.Single(await afterReceipt.MovimientosStock.ToListAsync());
+            Assert.Equal("Entrada", entrada.TipoMovimiento);
+            Assert.Equal(5m, entrada.Cantidad);
+        }
+
+        await using (var correctionContext = database.CreateContext())
+        {
+            var result = await CreateAuthenticatedGoodsReceiptController(correctionContext, usuarioId)
+                .Corregir(recepcionId, new CorregirRecepcionDto
+                {
+                    Motivo = "Dos unidades no fueron recibidas",
+                    Items = [new CorregirRecepcionDetalleDto { ProductoId = productoId, Cantidad = 2m }]
+                });
+            Assert.IsType<OkObjectResult>(result);
+        }
+
+        await using (var afterCorrection = database.CreateContext())
+        {
+            Assert.Equal(13m, await afterCorrection.Stock.Select(s => s.StockActual).SingleAsync());
+            Assert.Single(await afterCorrection.RecepcionesMercaderiaCorrecciones.ToListAsync());
+            Assert.Contains(await afterCorrection.MovimientosStock.ToListAsync(),
+                m => m.TipoMovimiento == "Salida" && m.Cantidad == 2m);
+        }
+
+        await using (var cancellationContext = database.CreateContext())
+        {
+            var result = await CreateAuthenticatedGoodsReceiptController(cancellationContext, usuarioId)
+                .Anular(recepcionId, new AnularRecepcionDto { Motivo = "Anulacion integral de prueba" });
+            Assert.IsType<OkObjectResult>(result);
+        }
+
+        await using (var finalContext = database.CreateContext())
+        {
+            Assert.Equal(10m, await finalContext.Stock.Select(s => s.StockActual).SingleAsync());
+            Assert.Equal("Anulada", await finalContext.RecepcionesMercaderia.Select(r => r.Estado).SingleAsync());
+            Assert.Equal(3, await finalContext.MovimientosStock.CountAsync());
+            Assert.Equal(2, await finalContext.RecepcionesMercaderiaEventos.CountAsync());
+        }
+    }
+
     private static VentasController CreateAuthenticatedController(
         AugustDbContext context,
         int userId)
@@ -402,6 +497,26 @@ public class SqlServerIntegrationTests
         int userId)
     {
         var controller = new CajasController(context);
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity(
+                    [
+                        new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+                        new Claim(ClaimTypes.Role, "Administrador")
+                    ],
+                    "TestAuthentication"))
+            }
+        };
+        return controller;
+    }
+
+    private static RecepcionesMercaderiaController CreateAuthenticatedGoodsReceiptController(
+        AugustDbContext context,
+        int userId)
+    {
+        var controller = new RecepcionesMercaderiaController(context);
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext
